@@ -93,6 +93,40 @@ const TELNYX_API_KEY       = process.env.TELNYX_API_KEY ?? "";
 const TELNYX_FROM_NUMBER   = process.env.TELNYX_FROM_NUMBER ?? "+61485825732";
 const TELNYX_CONNECTION_ID = process.env.TELNYX_CONNECTION_ID ?? "";
 
+// Logs the full Telnyx error payload (errors[] with code/title/detail/source)
+// to the server logs and returns an Error whose message surfaces those details
+// to the frontend instead of a bare status code.
+function telnyxError(
+  context: string,
+  status: number,
+  json: Record<string, unknown>,
+  raw: string,
+): Error {
+  const errors = Array.isArray(json?.errors)
+    ? (json.errors as Array<Record<string, unknown>>)
+    : [];
+
+  console.error(
+    `[Telnyx] ${context} failed (HTTP ${status}):`,
+    errors.length ? JSON.stringify(errors, null, 2) : raw || "(empty body)",
+  );
+
+  const summary = errors.length
+    ? errors
+        .map((e) => {
+          const parts = [
+            e.code != null ? `code ${e.code}` : null,
+            e.title,
+            e.detail,
+          ].filter(Boolean);
+          return parts.length ? parts.join(": ") : JSON.stringify(e);
+        })
+        .join("; ")
+    : raw || `HTTP ${status}`;
+
+  return new Error(`Telnyx ${context} error ${status}: ${summary}`);
+}
+
 async function telnyxPost(path: string, body: Record<string, unknown>) {
   const res = await fetch(`https://api.telnyx.com/v2${path}`, {
     method: "POST",
@@ -102,12 +136,15 @@ async function telnyxPost(path: string, body: Record<string, unknown>) {
     },
     body: JSON.stringify(body),
   });
-  const json = (await res.json()) as Record<string, unknown>;
+  const raw = await res.text();
+  let json: Record<string, unknown> = {};
+  try {
+    json = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+  } catch {
+    // Non-JSON body — leave json empty; raw is preserved for logging.
+  }
   if (!res.ok) {
-    const errMsg =
-      (json?.errors as Array<{ detail?: string }>)?.[0]?.detail ??
-      `Telnyx error ${res.status}`;
-    throw new Error(errMsg);
+    throw telnyxError(`POST ${path}`, res.status, json, raw);
   }
   return json;
 }
@@ -381,8 +418,19 @@ export const appRouter = router({
         }
       );
       if (!tokenRes.ok) {
-        const err = await tokenRes.json() as Record<string, unknown>;
-        throw new Error(`Token generation failed: ${JSON.stringify(err)}`);
+        const raw = await tokenRes.text();
+        let json: Record<string, unknown> = {};
+        try {
+          json = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+        } catch {
+          // Non-JSON body — leave json empty; raw is preserved for logging.
+        }
+        throw telnyxError(
+          `POST /telephony_credentials/${credId}/token`,
+          tokenRes.status,
+          json,
+          raw,
+        );
       }
       const token = await tokenRes.text();
       return {
