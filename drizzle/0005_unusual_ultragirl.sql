@@ -1,0 +1,1 @@
+ALTER TABLE `sms_messages` ADD `channel` enum('sms','imessage') DEFAULT 'sms' NOT NULL;
