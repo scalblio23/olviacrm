@@ -28,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { WhatsNewMenu, WhatsNewAdmin } from "@/components/WhatsNew";
 import type { Lead, CallHistoryRecord, Contact, Tag as TagType } from "../../../drizzle/schema";
 import AutomationsPanel from "./AutomationsPanel";
 import AppointmentsPanel from "./AppointmentsPanel";
@@ -924,6 +925,9 @@ function SettingsPanel({ allTags }: { allTags: TagType[] }) {
           </Button>
         </div>
       </div>
+
+      {/* What's New management (admin only) */}
+      <WhatsNewAdmin />
 
       {/* Add User form */}
       {showAddUser && (
@@ -1948,6 +1952,7 @@ export default function Dialer() {
             onHangup={phone.hangup}
             onToggleMute={phone.toggleMute}
           />
+          <WhatsNewMenu />
           <Button variant="outline" size="icon" onClick={toggleTheme}
             className="w-8 h-8 border-border text-muted-foreground hover:text-foreground"
             title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>

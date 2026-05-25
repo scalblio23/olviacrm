@@ -1,6 +1,6 @@
 import { eq, asc, desc, inArray, and, gte, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, User, leads, leadSessions, InsertLead, Lead, callHistory, InsertCallHistory, CallHistoryRecord, smsMessages, InsertSmsMessage, SmsMessage, contacts, InsertContact, Contact, tags, InsertTag, Tag, contactTags, smartlists, Smartlist, InsertSmartlist, userTagPermissions, emailMessages, EmailMessage, automations, Automation, InsertAutomation, automationSteps, AutomationStep, InsertAutomationStep, automationEnrollments, AutomationEnrollment, calendars, Calendar, InsertCalendar, appointments, Appointment, InsertAppointment, appSettings, automationExecutionLogs, AutomationExecutionLog, InsertAutomationExecutionLog } from "../drizzle/schema";
+import { InsertUser, users, User, leads, leadSessions, InsertLead, Lead, callHistory, InsertCallHistory, CallHistoryRecord, smsMessages, InsertSmsMessage, SmsMessage, contacts, InsertContact, Contact, tags, InsertTag, Tag, contactTags, smartlists, Smartlist, InsertSmartlist, userTagPermissions, emailMessages, EmailMessage, automations, Automation, InsertAutomation, automationSteps, AutomationStep, InsertAutomationStep, automationEnrollments, AutomationEnrollment, calendars, Calendar, InsertCalendar, appointments, Appointment, InsertAppointment, appSettings, automationExecutionLogs, AutomationExecutionLog, InsertAutomationExecutionLog, updates, Update, updateDismissals } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -1028,4 +1028,52 @@ export async function countExecutionLogs(opts: {
   if (conditions.length) q.where(and(...conditions));
   const rows = await q;
   return rows[0]?.total ?? 0;
+}
+
+// ─── What's New (product updates) ─────────────────────────────────────────────
+
+export async function listUpdates(): Promise<Update[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(updates).orderBy(desc(updates.createdAt), desc(updates.id));
+}
+
+export async function getDismissedUpdateIds(userId: number): Promise<number[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({ updateId: updateDismissals.updateId })
+    .from(updateDismissals)
+    .where(eq(updateDismissals.userId, userId));
+  return rows.map(r => r.updateId);
+}
+
+export async function createUpdate(data: { title: string; body: string }): Promise<Update> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(updates).values({ title: data.title, body: data.body });
+  const rows = await db.select().from(updates).where(eq(updates.id, result.insertId)).limit(1);
+  return rows[0];
+}
+
+export async function updateUpdate(id: number, data: { title: string; body: string }): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(updates).set({ title: data.title, body: data.body }).where(eq(updates.id, id));
+}
+
+export async function deleteUpdate(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(updateDismissals).where(eq(updateDismissals.updateId, id));
+  await db.delete(updates).where(eq(updates.id, id));
+}
+
+// Idempotent: composite PK means re-dismissing an already-dismissed update is a no-op.
+export async function dismissUpdatesForUser(userId: number, updateIds: number[]): Promise<void> {
+  if (updateIds.length === 0) return;
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const values = updateIds.map(updateId => ({ userId, updateId }));
+  await db.insert(updateDismissals).values(values).onDuplicateKeyUpdate({ set: { userId } });
 }
