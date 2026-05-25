@@ -1,0 +1,15 @@
+[
+  {
+    "name": "Team Member One",
+    "email": "one@yourcompany.com",
+    "phone": "+61400000001",
+    "role": "admin",
+    "password": "change-me-strong-password-1"
+  },
+  {
+    "name": "Team Member Two",
+    "email": "two@yourcompany.com",
+    "role": "user",
+    "password": "change-me-strong-password-2"
+  }
+]

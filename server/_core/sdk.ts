@@ -8,9 +8,6 @@ import type { User } from "../../drizzle/schema";
 import * as db from "../db";
 import { ENV } from "./env";
 import type {
-  ExchangeTokenRequest,
-  ExchangeTokenResponse,
-  GetUserInfoResponse,
   GetUserInfoWithJwtRequest,
   GetUserInfoWithJwtResponse,
 } from "./types/manusTypes";
@@ -24,57 +21,7 @@ export type SessionPayload = {
   name: string;
 };
 
-const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
-const GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
 const GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfoWithJwt`;
-
-class OAuthService {
-  constructor(private client: ReturnType<typeof axios.create>) {
-    console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
-    if (!ENV.oAuthServerUrl) {
-      console.error(
-        "[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable."
-      );
-    }
-  }
-
-  private decodeState(state: string): string {
-    const redirectUri = atob(state);
-    return redirectUri;
-  }
-
-  async getTokenByCode(
-    code: string,
-    state: string
-  ): Promise<ExchangeTokenResponse> {
-    const payload: ExchangeTokenRequest = {
-      clientId: ENV.appId,
-      grantType: "authorization_code",
-      code,
-      redirectUri: this.decodeState(state),
-    };
-
-    const { data } = await this.client.post<ExchangeTokenResponse>(
-      EXCHANGE_TOKEN_PATH,
-      payload
-    );
-
-    return data;
-  }
-
-  async getUserInfoByToken(
-    token: ExchangeTokenResponse
-  ): Promise<GetUserInfoResponse> {
-    const { data } = await this.client.post<GetUserInfoResponse>(
-      GET_USER_INFO_PATH,
-      {
-        accessToken: token.accessToken,
-      }
-    );
-
-    return data;
-  }
-}
 
 const createOAuthHttpClient = (): AxiosInstance =>
   axios.create({
@@ -84,11 +31,9 @@ const createOAuthHttpClient = (): AxiosInstance =>
 
 class SDKServer {
   private readonly client: AxiosInstance;
-  private readonly oauthService: OAuthService;
 
   constructor(client: AxiosInstance = createOAuthHttpClient()) {
     this.client = client;
-    this.oauthService = new OAuthService(this.client);
   }
 
   private deriveLoginMethod(
@@ -111,38 +56,6 @@ class SDKServer {
     if (set.has("REGISTERED_PLATFORM_GITHUB")) return "github";
     const first = Array.from(set)[0];
     return first ? first.toLowerCase() : null;
-  }
-
-  /**
-   * Exchange OAuth authorization code for access token
-   * @example
-   * const tokenResponse = await sdk.exchangeCodeForToken(code, state);
-   */
-  async exchangeCodeForToken(
-    code: string,
-    state: string
-  ): Promise<ExchangeTokenResponse> {
-    return this.oauthService.getTokenByCode(code, state);
-  }
-
-  /**
-   * Get user information using access token
-   * @example
-   * const userInfo = await sdk.getUserInfo(tokenResponse.accessToken);
-   */
-  async getUserInfo(accessToken: string): Promise<GetUserInfoResponse> {
-    const data = await this.oauthService.getUserInfoByToken({
-      accessToken,
-    } as ExchangeTokenResponse);
-    const loginMethod = this.deriveLoginMethod(
-      (data as any)?.platforms,
-      (data as any)?.platform ?? data.platform ?? null
-    );
-    return {
-      ...(data as any),
-      platform: loginMethod,
-      loginMethod,
-    } as GetUserInfoResponse;
   }
 
   private parseCookies(cookieHeader: string | undefined) {
@@ -277,25 +190,7 @@ class SDKServer {
 
     const sessionUserId = session.openId;
     const signedInAt = new Date();
-    let user = await db.getUserByOpenId(sessionUserId);
-
-    // If user not in DB, sync from OAuth server automatically
-    if (!user) {
-      try {
-        const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
-        await db.upsertUser({
-          openId: userInfo.openId,
-          name: userInfo.name || null,
-          email: userInfo.email ?? null,
-          loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
-          lastSignedIn: signedInAt,
-        });
-        user = await db.getUserByOpenId(userInfo.openId);
-      } catch (error) {
-        console.error("[Auth] Failed to sync user from OAuth:", error);
-        throw ForbiddenError("Failed to sync user info");
-      }
-    }
+    const user = await db.getUserByOpenId(sessionUserId);
 
     if (!user) {
       throw ForbiddenError("User not found");
