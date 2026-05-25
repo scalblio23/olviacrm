@@ -1,4 +1,4 @@
-import { bigint, boolean, int, mysqlEnum, mysqlTable, text, timestamp, varchar, json } from "drizzle-orm/mysql-core";
+import { bigint, boolean, int, mysqlEnum, mysqlTable, primaryKey, text, timestamp, varchar, json } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -294,3 +294,22 @@ export const automationExecutionLogs = mysqlTable("automation_execution_logs", {
 });
 export type AutomationExecutionLog = typeof automationExecutionLogs.$inferSelect;
 export type InsertAutomationExecutionLog = typeof automationExecutionLogs.$inferInsert;
+
+// ─── What's New (product updates) ─────────────────────────────────────────────
+export const updates = mysqlTable("updates", {
+  id:        int("id").autoincrement().primaryKey(),
+  title:     varchar("title", { length: 255 }).notNull(),
+  body:      text("body").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type Update = typeof updates.$inferSelect;
+export type InsertUpdate = typeof updates.$inferInsert;
+
+// Per-user dismissals. Composite PK (userId, updateId) keeps dismissing idempotent
+// — one row per user/update, so re-dismissing never duplicates.
+export const updateDismissals = mysqlTable("update_dismissals", {
+  userId:      int("userId").notNull(),
+  updateId:    int("updateId").notNull(),
+  dismissedAt: timestamp("dismissedAt").defaultNow().notNull(),
+}, (t) => [primaryKey({ columns: [t.userId, t.updateId] })]);
+export type UpdateDismissal = typeof updateDismissals.$inferSelect;

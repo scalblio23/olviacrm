@@ -85,6 +85,12 @@ import {
   updateContactById,
   getExecutionLogs,
   countExecutionLogs,
+  listUpdates,
+  getDismissedUpdateIds,
+  createUpdate,
+  updateUpdate,
+  deleteUpdate,
+  dismissUpdatesForUser,
 } from "./db";
 
 // ─── Telnyx helpers ──────────────────────────────────────────────────────────
@@ -1579,6 +1585,44 @@ For SMS keep it under 160 characters unless the user explicitly asks for longer.
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await deleteAppointment(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ─── What's New (product updates) ──────────────────────────────────────────
+  whatsNew: router({
+    // All updates, newest first, each flagged with whether the current user
+    // has dismissed it. Drives both the auto-popup (filter !dismissed) and the
+    // manual "view all" list.
+    list: protectedProcedure.query(async ({ ctx }) => {
+      const [all, dismissedIds] = await Promise.all([
+        listUpdates(),
+        getDismissedUpdateIds(ctx.user.id),
+      ]);
+      const dismissed = new Set(dismissedIds);
+      return all.map(u => ({ ...u, dismissed: dismissed.has(u.id) }));
+    }),
+    dismiss: protectedProcedure
+      .input(z.object({ updateIds: z.array(z.number()).min(1) }))
+      .mutation(async ({ input, ctx }) => {
+        await dismissUpdatesForUser(ctx.user.id, input.updateIds);
+        return { success: true };
+      }),
+    create: adminProcedure
+      .input(z.object({ title: z.string().min(1).max(255), body: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        return createUpdate(input);
+      }),
+    update: adminProcedure
+      .input(z.object({ id: z.number(), title: z.string().min(1).max(255), body: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        await updateUpdate(input.id, { title: input.title, body: input.body });
+        return { success: true };
+      }),
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteUpdate(input.id);
         return { success: true };
       }),
   }),
