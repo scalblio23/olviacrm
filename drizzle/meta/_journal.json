@@ -1,0 +1,167 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1778568531589,
+      "tag": "0000_living_mercury",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1778568930715,
+      "tag": "0001_ordinary_scorpion",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1778584458230,
+      "tag": "0002_steep_ironclad",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1778587198829,
+      "tag": "0003_classy_nightshade",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1778590419967,
+      "tag": "0004_smooth_galactus",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1778593908546,
+      "tag": "0005_unusual_ultragirl",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1778595866713,
+      "tag": "0006_opposite_silk_fever",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1778597099396,
+      "tag": "0007_majestic_havok",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1778642533983,
+      "tag": "0008_curvy_punisher",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1778643610976,
+      "tag": "0009_cynical_wallop",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1778646738803,
+      "tag": "0010_light_lethal_legion",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1778648508964,
+      "tag": "0011_abnormal_harrier",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1778651644680,
+      "tag": "0012_wooden_mister_fear",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "5",
+      "when": 1778653255979,
+      "tag": "0013_green_groot",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "5",
+      "when": 1778659339428,
+      "tag": "0014_wandering_bill_hollister",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "5",
+      "when": 1778717589073,
+      "tag": "0015_loving_wolfsbane",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "5",
+      "when": 1778719002193,
+      "tag": "0016_pretty_guardsmen",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1778723493172,
+      "tag": "0017_hot_stepford_cuckoos",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1778726868836,
+      "tag": "0018_busy_kid_colt",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1778731838199,
+      "tag": "0019_complex_captain_midlands",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "5",
+      "when": 1778738043699,
+      "tag": "0020_dizzy_dust",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "5",
+      "when": 1778741817214,
+      "tag": "0021_sharp_roland_deschain",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "5",
+      "when": 1778756012362,
+      "tag": "0022_tiny_unus",
+      "breakpoints": true
+    }
+  ]
+}

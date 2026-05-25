@@ -1,0 +1,1 @@
+ALTER TABLE `contacts` ADD `status` varchar(64);
