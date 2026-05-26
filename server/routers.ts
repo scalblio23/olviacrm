@@ -5,10 +5,12 @@ import bcrypt from "bcryptjs";
 import { parse as parseCookie } from "cookie";
 import { COOKIE_NAME } from "@shared/const";
 import { parseDate } from "@shared/parseDate";
+import { normalizeAuPhone } from "@shared/phone";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { sdk } from "./_core/sdk";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
 import { createHeartbeatJob } from "./_core/heartbeat";
 import { sendEmail, buildInviteEmailHtml, buildFollowUp1Html, buildReminderHtml } from "./mailgun";
 import {
@@ -266,7 +268,12 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const sessionId = nanoid(16);
         await createLeadSession(sessionId, input.fileName, input.tagId);
-        const leadRows = input.rows.map((r) => ({
+        // Normalize phones to E.164 (AU default) and skip any that can't be normalized.
+        const validRows = input.rows
+          .map((r) => ({ ...r, phone: normalizeAuPhone(r.phone) }))
+          .filter((r): r is typeof r & { phone: string } => r.phone !== null);
+        const skipped = input.rows.length - validRows.length;
+        const leadRows = validRows.map((r) => ({
           sessionId,
           name:      r.name    ?? null,
           phone:     r.phone,
@@ -277,8 +284,8 @@ export const appRouter = router({
         // Mirror each lead into the contacts table and link the tag
         const CHUNK = 20;
         const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-        for (let i = 0; i < input.rows.length; i += CHUNK) {
-          const chunk = input.rows.slice(i, i + CHUNK);
+        for (let i = 0; i < validRows.length; i += CHUNK) {
+          const chunk = validRows.slice(i, i + CHUNK);
           const contactIds: number[] = [];
           for (const r of chunk) {
             const contact = await upsertContact({
@@ -306,9 +313,9 @@ export const appRouter = router({
           if (input.tagId && contactIds.length > 0) {
             await bulkAddTagToContacts(contactIds, input.tagId);
           }
-          if (i + CHUNK < input.rows.length) await sleep(150);
+          if (i + CHUNK < validRows.length) await sleep(150);
         }
-        return { sessionId };
+        return { sessionId, imported: validRows.length, skipped };
       }),
 
     list: publicProcedure
@@ -662,9 +669,13 @@ export const appRouter = router({
         dealResult:       z.string().max(16).optional(),
       }))
       .mutation(async ({ input }) => {
+        const phone = normalizeAuPhone(input.phone);
+        if (!phone) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid phone number — could not normalize to a valid format." });
+        }
         const contact = await upsertContact({
           name:      input.name,
-          phone:     input.phone,
+          phone:     phone,
           email:     input.email || null,
           company:   input.company || null,
           notes:     input.notes || null,
