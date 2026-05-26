@@ -338,9 +338,16 @@ export async function upsertContact(record: InsertContact): Promise<Contact> {
         criteria3: record.criteria3 ?? null,
         criteria4: record.criteria4 ?? null,
         criteria5: record.criteria5 ?? null,
+        // Sales-pipeline fields: only overwrite when explicitly provided, so a
+        // lead-list CSV re-import never wipes a closer's manually-entered data.
+        ...(record.closer !== undefined ? { closer: record.closer } : {}),
+        ...(record.priceQuoted !== undefined ? { priceQuoted: record.priceQuoted } : {}),
+        ...(record.callRecordingUrl !== undefined ? { callRecordingUrl: record.callRecordingUrl } : {}),
+        ...(record.objections !== undefined ? { objections: record.objections } : {}),
         // Only overwrite status if explicitly provided (null means 'not set', undefined means 'keep existing')
         ...(record.status !== undefined ? { status: record.status } : {}),
         ...(record.outcome !== undefined ? { outcome: record.outcome } : {}),
+        ...(record.dealResult !== undefined ? { dealResult: record.dealResult } : {}),
         ...(record.timezone !== undefined ? { timezone: record.timezone } : {}),
         // Only overwrite createdAt if explicitly provided (e.g. from CSV import)
         ...(record.createdAt !== undefined ? { createdAt: record.createdAt } : {}),
@@ -370,6 +377,12 @@ export async function updateContactOutcome(id: number, outcome: string | null): 
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(contacts).set({ outcome }).where(eq(contacts.id, id));
+}
+
+export async function updateContactDealResult(id: number, dealResult: string | null): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(contacts).set({ dealResult }).where(eq(contacts.id, id));
 }
 
 export async function bulkUpdateContactStatus(ids: number[], status: string | null): Promise<void> {

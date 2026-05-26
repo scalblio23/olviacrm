@@ -111,6 +111,13 @@ export const contacts = mysqlTable("contacts", {
   status:     varchar("status", { length: 64 }),
   outcome:    text("outcome"),
   timezone:   varchar("timezone", { length: 64 }),
+  // ── Scalbl.io sales-pipeline fields (additive; broker workflow unaffected) ──
+  closer:           varchar("closer", { length: 255 }),
+  priceQuoted:      varchar("priceQuoted", { length: 64 }),
+  callRecordingUrl: varchar("callRecordingUrl", { length: 1024 }),
+  objections:       text("objections"),
+  /** Deal result for pipeline counters: 'won' | 'lost' | 'pending' | null. Distinct from free-text `outcome` notes. */
+  dealResult:       varchar("dealResult", { length: 16 }),
   createdAt:  timestamp("createdAt").defaultNow().notNull(),
   updatedAt:  timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

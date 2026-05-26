@@ -75,6 +75,11 @@ const CONTACT_FIELDS = [
   { value: "criteria3",   label: "Criteria 3" },
   { value: "criteria4",   label: "Criteria 4" },
   { value: "criteria5",   label: "Criteria 5" },
+  { value: "closer",           label: "Closer" },
+  { value: "priceQuoted",      label: "Price Quoted" },
+  { value: "callRecordingUrl", label: "Call Recording URL" },
+  { value: "objections",       label: "Objections" },
+  { value: "dealResult",       label: "Deal Result" },
   { value: "createdAt",   label: "Date Created ★" },
 ] as const;
 
@@ -95,9 +100,27 @@ const CONTACT_STATUSES: { value: string; label: string; color: string; bg: strin
   { value: "callback",         label: "Callback",         color: "#000000", bg: "#facc15" },
   { value: "appointment_set",  label: "Appointment Set",  color: "#ffffff", bg: "#0d9488" },
   { value: "do_not_call",      label: "Do Not Call",      color: "#ffffff", bg: "#7c3aed" },
+  // ── Scalbl.io sales-pipeline statuses ──
+  { value: "upcoming",         label: "Upcoming",         color: "#ffffff", bg: "#0ea5e9" },
+  { value: "show",             label: "Show",             color: "#ffffff", bg: "#16a34a" },
+  { value: "no_show",          label: "No Show",          color: "#ffffff", bg: "#dc2626" },
+  { value: "not_booked",       label: "Not Booked",       color: "#ffffff", bg: "#64748b" },
+  { value: "won",              label: "Won",              color: "#ffffff", bg: "#15803d" },
+  { value: "lost",             label: "Lost",             color: "#ffffff", bg: "#b91c1c" },
+  { value: "pending",          label: "Pending",          color: "#000000", bg: "#f59e0b" },
 ];
 function getStatusMeta(status: string | null | undefined) {
   return CONTACT_STATUSES.find(s => s.value === status) ?? null;
+}
+
+// Deal result — distinct from free-text `outcome` notes; drives the WON/LOST/PENDING counters.
+const DEAL_RESULTS: { value: string; label: string; color: string; bg: string }[] = [
+  { value: "won",     label: "Won",     color: "#ffffff", bg: "#15803d" },
+  { value: "lost",    label: "Lost",    color: "#ffffff", bg: "#b91c1c" },
+  { value: "pending", label: "Pending", color: "#000000", bg: "#f59e0b" },
+];
+function getDealResultMeta(v: string | null | undefined) {
+  return DEAL_RESULTS.find(d => d.value === v) ?? null;
 }
 
 const DISPOSITIONS: { value: Disposition; label: string; icon: React.ReactNode }[] = [
@@ -204,6 +227,11 @@ function autoDetectField(header: string): ContactFieldKey {
   if (/criteria.?3|crit.?3/i.test(h)) return "criteria3";
   if (/criteria.?4|crit.?4/i.test(h)) return "criteria4";
   if (/criteria.?5|crit.?5/i.test(h)) return "criteria5";
+  if (/closer|closed.?by|rep|agent/i.test(h)) return "closer";
+  if (/price|quote|amount|value|deal.?size/i.test(h)) return "priceQuoted";
+  if (/recording|fathom|call.?url|drive.?link/i.test(h)) return "callRecordingUrl";
+  if (/objection/i.test(h)) return "objections";
+  if (/deal.?result|won.?lost|result/i.test(h)) return "dealResult";
   if (/date.?created|created.?at|created.?date|date.?added|added.?date|^date$/i.test(h)) return "createdAt";
   return "skip";
 }
@@ -1229,6 +1257,11 @@ export default function Dialer() {
     status: "" as string,
     outcome: "" as string,
     timezone: "" as string,
+    closer: "" as string,
+    priceQuoted: "" as string,
+    callRecordingUrl: "" as string,
+    objections: "" as string,
+    dealResult: "" as string,
   });
   // Left sidebar tab — persisted in localStorage
   const [leftTab, setLeftTab] = useState<"conversations" | "contacts" | "settings" | "automations" | "appointments">(
@@ -1354,6 +1387,11 @@ export default function Dialer() {
       createdAt: c.createdAt ? new Date(c.createdAt).toISOString() : "",
       status:    (c as any).status ?? "",
       outcome:   (c as any).outcome ?? "",
+      closer:           (c as any).closer ?? "",
+      priceQuoted:      (c as any).priceQuoted ?? "",
+      callRecordingUrl: (c as any).callRecordingUrl ?? "",
+      objections:       (c as any).objections ?? "",
+      dealResult:       (c as any).dealResult ?? "",
     };
     return map[col] ?? "";
   }
@@ -1772,7 +1810,7 @@ export default function Dialer() {
       return mapped;
     });
 
-    const KNOWN_FIELDS = ["phone", "name", "company", "email", "source", "criteria1", "criteria2", "criteria3", "criteria4", "criteria5", "createdAt"];
+    const KNOWN_FIELDS = ["phone", "name", "company", "email", "source", "criteria1", "criteria2", "criteria3", "criteria4", "criteria5", "closer", "priceQuoted", "callRecordingUrl", "objections", "dealResult", "createdAt"];
     const leadRows = normalizedRows
       .filter((r) => r.phone?.trim())
       .map((r) => ({
@@ -1786,6 +1824,11 @@ export default function Dialer() {
         criteria3: r.criteria3?.trim() || undefined,
         criteria4: r.criteria4?.trim() || undefined,
         criteria5: r.criteria5?.trim() || undefined,
+        closer:           r.closer?.trim()           || undefined,
+        priceQuoted:      r.priceQuoted?.trim()      || undefined,
+        callRecordingUrl: r.callRecordingUrl?.trim() || undefined,
+        objections:       r.objections?.trim()       || undefined,
+        dealResult:       r.dealResult?.trim()       || undefined,
         createdAt: r.createdAt?.trim() || undefined,
         extraData: Object.fromEntries(
           Object.entries(r).filter(([k]) => !KNOWN_FIELDS.includes(k))
@@ -2046,7 +2089,7 @@ export default function Dialer() {
                 {/* Add Contact */}
                 <button
                   onClick={() => {
-                    setContactForm({ phone: "", name: "", email: "", company: "", notes: "", source: "", criteria1: "", criteria2: "", criteria3: "", criteria4: "", criteria5: "", tagIds: [], status: "", outcome: "", timezone: "" });
+                    setContactForm({ phone: "", name: "", email: "", company: "", notes: "", source: "", criteria1: "", criteria2: "", criteria3: "", criteria4: "", criteria5: "", tagIds: [], status: "", outcome: "", timezone: "", closer: "", priceQuoted: "", callRecordingUrl: "", objections: "", dealResult: "" });
                     setContactDialogOpen(true);
                   }}
                   className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-primary/50 bg-primary/10 text-primary hover:bg-primary/20 transition-all"
@@ -2116,6 +2159,34 @@ export default function Dialer() {
                 </div>
               </div>
             </div>
+            {/* ── Pipeline counters — always global (ignore active filters) ── */}
+            {(() => {
+              const by = (pred: (c: any) => boolean) => contactList.reduce((n, c) => n + (pred(c) ? 1 : 0), 0);
+              const counters = [
+                { label: "TOTAL",      value: contactList.length,                  accent: "#a78bfa" },
+                { label: "SHOWS",      value: by(c => c.status === "show"),         accent: "#4ade80" },
+                { label: "NO SHOW",    value: by(c => c.status === "no_show"),      accent: "#f87171" },
+                { label: "UPCOMING",   value: by(c => c.status === "upcoming"),     accent: "#38bdf8" },
+                { label: "NOT BOOKED", value: by(c => c.status === "not_booked"),   accent: "#94a3b8" },
+                { label: "WON",        value: by(c => c.dealResult === "won"),      accent: "#22c55e" },
+                { label: "LOST",       value: by(c => c.dealResult === "lost"),     accent: "#ef4444" },
+                { label: "PENDING",    value: by(c => c.dealResult === "pending"),  accent: "#f59e0b" },
+              ];
+              return (
+                <div className="flex items-stretch gap-2 overflow-x-auto px-6 py-3 border-b border-border shrink-0 bg-background/40">
+                  {counters.map(c => (
+                    <div
+                      key={c.label}
+                      className="flex flex-col items-center justify-center min-w-[84px] px-3 py-1.5 rounded-lg border border-border/60 bg-card/40"
+                      style={{ boxShadow: `inset 0 -2px 0 ${c.accent}55` }}
+                    >
+                      <span className="text-lg font-bold leading-none" style={{ color: c.accent }}>{c.value}</span>
+                      <span className="text-[9px] font-semibold tracking-wide text-muted-foreground mt-1">{c.label}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
             {/* AI chat panel — slide in below header when showContactsAI is true */}
             {showContactsAI && (
               <div className="border-b border-border bg-muted/10 px-6 py-4 shrink-0">
@@ -2184,6 +2255,7 @@ export default function Dialer() {
                       const isTagField    = rule.field === "tags";
                       const isDateField   = rule.field === "createdAt";
                       const isStatusField = rule.field === "status";
+                      const isDealResultField = rule.field === "dealResult";
                       const needsValue = !["is_empty","is_not_empty"].includes(rule.operator);
                       const FIELD_OPTS = [
                         { v: "name",      l: "Name" },
@@ -2197,6 +2269,11 @@ export default function Dialer() {
                         { v: "criteria3", l: "Criteria 3" },
                         { v: "criteria4", l: "Criteria 4" },
                         { v: "criteria5", l: "Criteria 5" },
+                        { v: "closer",           l: "Closer" },
+                        { v: "priceQuoted",      l: "Price Quoted" },
+                        { v: "callRecordingUrl", l: "Call Recording URL" },
+                        { v: "objections",       l: "Objections" },
+                        { v: "dealResult",       l: "Deal Result" },
                         { v: "tags",      l: "Tag" },
                         { v: "createdAt", l: "Date Created" },
                         { v: "outcome", l: "Notes / Outcome" },
@@ -2234,7 +2311,7 @@ export default function Dialer() {
                           {idx === 0 && <span className="text-[10px] font-semibold text-muted-foreground uppercase w-8 text-right shrink-0">WHERE</span>}
                           {/* Field selector */}
                           <Select value={rule.field} onValueChange={v => {
-                            const defaultOp: FilterOperator = v === "tags" ? "has_tag" : v === "createdAt" ? "before" : v === "status" ? "is" : "contains";
+                            const defaultOp: FilterOperator = v === "tags" ? "has_tag" : v === "createdAt" ? "before" : (v === "status" || v === "dealResult") ? "is" : "contains";
                             setFilterRules(prev => prev.map((r,i) => i===idx ? { ...r, field: v, operator: defaultOp, value: "" } : r));
                           }}>
                             <SelectTrigger size="sm" className="h-7 w-36 text-xs">
@@ -2266,6 +2343,22 @@ export default function Dialer() {
                                       <span className="flex items-center gap-1.5">
                                         <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
                                         {s.label}
+                                      </span>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : isDealResultField ? (
+                              <Select value={rule.value} onValueChange={v => setFilterRules(prev => prev.map((r,i) => i===idx ? { ...r, value: v } : r))}>
+                                <SelectTrigger size="sm" className="h-7 w-40 text-xs">
+                                  <SelectValue placeholder="Select result…" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {DEAL_RESULTS.map(d => (
+                                    <SelectItem key={d.value} value={d.value}>
+                                      <span className="flex items-center gap-1.5">
+                                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.bg }} />
+                                        {d.label}
                                       </span>
                                     </SelectItem>
                                   ))}
@@ -3287,6 +3380,11 @@ export default function Dialer() {
                         status:    (savedContact as any)?.status ?? "",
                         outcome:   (savedContact as any)?.outcome ?? "",
                         timezone:  (savedContact as any)?.timezone ?? "",
+                        closer:           (savedContact as any)?.closer ?? "",
+                        priceQuoted:      (savedContact as any)?.priceQuoted ?? "",
+                        callRecordingUrl: (savedContact as any)?.callRecordingUrl ?? "",
+                        objections:       (savedContact as any)?.objections ?? "",
+                        dealResult:       (savedContact as any)?.dealResult ?? "",
                       });
                       setContactDialogOpen(true);
                     }}
@@ -3612,6 +3710,48 @@ export default function Dialer() {
                 ))}
               </div>
             </div>
+            {/* ── Scalbl.io sales-pipeline fields ── */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Deal Result</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {DEAL_RESULTS.map((d) => (
+                  <button
+                    key={d.value}
+                    type="button"
+                    onClick={() => setContactForm(f => ({ ...f, dealResult: f.dealResult === d.value ? "" : d.value }))}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all"
+                    style={contactForm.dealResult === d.value
+                      ? { backgroundColor: d.bg, borderColor: d.color + "66", color: d.color }
+                      : { backgroundColor: "transparent", borderColor: "var(--border)", color: "var(--muted-foreground)" }}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label htmlFor="c-closer" className="text-xs text-muted-foreground">Closer</Label>
+                <Input id="c-closer" placeholder="Who ran the call" value={contactForm.closer}
+                  onChange={e => setContactForm(f => ({ ...f, closer: e.target.value }))} className="h-8 text-sm" />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="c-price" className="text-xs text-muted-foreground">Price Quoted</Label>
+                <Input id="c-price" placeholder="e.g. 1800" value={contactForm.priceQuoted}
+                  onChange={e => setContactForm(f => ({ ...f, priceQuoted: e.target.value }))} className="h-8 text-sm" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="c-recording" className="text-xs text-muted-foreground">Call Recording URL</Label>
+              <Input id="c-recording" placeholder="Fathom or Drive link" value={contactForm.callRecordingUrl}
+                onChange={e => setContactForm(f => ({ ...f, callRecordingUrl: e.target.value }))} className="h-8 text-sm" />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="c-objections" className="text-xs text-muted-foreground">Objections</Label>
+              <Textarea id="c-objections" placeholder="Short notes on objections…" rows={2} value={contactForm.objections}
+                onChange={e => setContactForm(f => ({ ...f, objections: e.target.value }))} />
+            </div>
             {/* Tag selector */}
             {allTags.length > 0 && (
               <div className="space-y-1.5">
@@ -3690,6 +3830,11 @@ export default function Dialer() {
                   status:    contactForm.status || undefined,
                   outcome:   contactForm.outcome || undefined,
                   timezone:  contactForm.timezone || undefined,
+                  closer:           contactForm.closer || undefined,
+                  priceQuoted:      contactForm.priceQuoted || undefined,
+                  callRecordingUrl: contactForm.callRecordingUrl || undefined,
+                  objections:       contactForm.objections || undefined,
+                  dealResult:       contactForm.dealResult || undefined,
                 });
               }}
             >
@@ -4138,6 +4283,14 @@ const KANBAN_STAGES: { value: string | null; label: string; color: string; bg: s
   { value: "appointment_set", label: "Appointment Set", color: "#2dd4bf", bg: "#0d948822" },
   { value: "not_interested",  label: "Not Interested",  color: "#f87171", bg: "#dc262622" },
   { value: "do_not_call",     label: "Do Not Call",     color: "#c084fc", bg: "#7c3aed22" },
+  // ── Scalbl.io sales-pipeline stages ──
+  { value: "upcoming",        label: "Upcoming",        color: "#38bdf8", bg: "#0ea5e922" },
+  { value: "show",            label: "Show",            color: "#4ade80", bg: "#16a34a22" },
+  { value: "no_show",         label: "No Show",         color: "#f87171", bg: "#dc262622" },
+  { value: "not_booked",      label: "Not Booked",      color: "#94a3b8", bg: "#64748b22" },
+  { value: "won",             label: "Won",             color: "#22c55e", bg: "#15803d22" },
+  { value: "lost",            label: "Lost",            color: "#f87171", bg: "#b91c1c22" },
+  { value: "pending",         label: "Pending",         color: "#fbbf24", bg: "#f59e0b22" },
 ];
 
 const KANBAN_PAGE = 20;
@@ -4186,15 +4339,36 @@ function KanbanCard({ contact, onOpenConvo, isDragOverlay = false }: { contact: 
           <Building2 size={11} className="shrink-0" />{(contact as any).company}
         </p>
       )}
-      {/* Stage badge */}
-      {sm && (
-        <span
-          className="self-start text-[11px] px-2.5 py-0.5 rounded-full font-medium"
-          style={{ backgroundColor: sm.bg, color: sm.color }}
-        >
-          {sm.label}
-        </span>
+      {/* Sales pipeline: price quoted + closer */}
+      {((contact as any).priceQuoted || (contact as any).closer) && (
+        <div className="flex items-center gap-2 flex-wrap text-[11px] text-muted-foreground">
+          {(contact as any).priceQuoted && (
+            <span className="px-1.5 py-0.5 rounded bg-muted/60 font-medium text-foreground">${(contact as any).priceQuoted}</span>
+          )}
+          {(contact as any).closer && (
+            <span className="truncate">by {(contact as any).closer}</span>
+          )}
+        </div>
       )}
+      {/* Stage + deal-result badges */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {sm && (
+          <span
+            className="text-[11px] px-2.5 py-0.5 rounded-full font-medium"
+            style={{ backgroundColor: sm.bg, color: sm.color }}
+          >
+            {sm.label}
+          </span>
+        )}
+        {getDealResultMeta((contact as any).dealResult) && (
+          <span
+            className="text-[11px] px-2.5 py-0.5 rounded-full font-medium"
+            style={{ backgroundColor: getDealResultMeta((contact as any).dealResult)!.bg, color: getDealResultMeta((contact as any).dealResult)!.color }}
+          >
+            {getDealResultMeta((contact as any).dealResult)!.label}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
