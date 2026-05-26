@@ -36,6 +36,7 @@ import {
   updateContactStatus,
   bulkUpdateContactStatus,
   updateContactOutcome,
+  updateContactDealResult,
   listTags,
   createTag,
   deleteTag,
@@ -251,6 +252,11 @@ export const appRouter = router({
               criteria3: z.string().optional(),
               criteria4: z.string().optional(),
               criteria5: z.string().optional(),
+              closer:           z.string().optional(),
+              priceQuoted:      z.string().optional(),
+              callRecordingUrl: z.string().optional(),
+              objections:       z.string().optional(),
+              dealResult:       z.string().optional(),
               createdAt: z.string().optional(),
               extraData: z.record(z.string(), z.string()).optional(),
             })
@@ -286,6 +292,12 @@ export const appRouter = router({
               criteria3: r.criteria3 ?? null,
               criteria4: r.criteria4 ?? null,
               criteria5: r.criteria5 ?? null,
+              // Pass through only when the CSV mapped them, so re-imports preserve existing values.
+              closer:           r.closer,
+              priceQuoted:      r.priceQuoted,
+              callRecordingUrl: r.callRecordingUrl,
+              objections:       r.objections,
+              dealResult:       r.dealResult,
               notes:     null,
               ...(r.createdAt ? (() => { const d = parseDate(r.createdAt); return d ? { createdAt: d } : {}; })() : {}),
             });
@@ -598,6 +610,15 @@ export const appRouter = router({
         await updateContactStatus(input.contactId, input.status);
         return { success: true };
       }),
+    setDealResult: publicProcedure
+      .input(z.object({
+        contactId:  z.number(),
+        dealResult: z.string().max(16).nullable(),
+      }))
+      .mutation(async ({ input }) => {
+        await updateContactDealResult(input.contactId, input.dealResult);
+        return { success: true };
+      }),
     bulkSetStatus: publicProcedure
       .input(z.object({
         contactIds: z.array(z.number()).min(1),
@@ -634,6 +655,11 @@ export const appRouter = router({
         status:    z.string().max(64).optional(),
         outcome:   z.string().optional(),
         timezone:  z.string().max(64).optional(),
+        closer:           z.string().max(255).optional(),
+        priceQuoted:      z.string().max(64).optional(),
+        callRecordingUrl: z.string().max(1024).optional(),
+        objections:       z.string().optional(),
+        dealResult:       z.string().max(16).optional(),
       }))
       .mutation(async ({ input }) => {
         const contact = await upsertContact({
@@ -651,6 +677,11 @@ export const appRouter = router({
           status:    input.status || null,
           outcome:   input.outcome !== undefined ? (input.outcome || null) : undefined,
           timezone:  input.timezone || null,
+          closer:           input.closer           !== undefined ? (input.closer           || null) : undefined,
+          priceQuoted:      input.priceQuoted      !== undefined ? (input.priceQuoted      || null) : undefined,
+          callRecordingUrl: input.callRecordingUrl !== undefined ? (input.callRecordingUrl || null) : undefined,
+          objections:       input.objections       !== undefined ? (input.objections       || null) : undefined,
+          dealResult:       input.dealResult       !== undefined ? (input.dealResult       || null) : undefined,
         });
         if (input.tagIds !== undefined) {
           await setContactTags(contact.id, input.tagIds);

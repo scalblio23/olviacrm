@@ -169,6 +169,13 @@
       "when": 1779702901802,
       "tag": "0023_steep_butterfly",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1779776285596,
+      "tag": "0024_overconfident_venom",
+      "breakpoints": true
     }
   ]
 }
