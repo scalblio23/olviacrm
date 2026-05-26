@@ -259,6 +259,8 @@ export const appRouter = router({
               callRecordingUrl: z.string().optional(),
               objections:       z.string().optional(),
               dealResult:       z.string().optional(),
+              status:    z.string().optional(),
+              tags:      z.array(z.string()).optional(),
               createdAt: z.string().optional(),
               extraData: z.record(z.string(), z.string()).optional(),
             })
@@ -281,6 +283,29 @@ export const appRouter = router({
           extraData: r.extraData ?? null,
         }));
         await insertLeads(leadRows);
+        // Resolve per-row tag names to ids, creating tags that don't exist yet.
+        // Cache is built lazily so uploads without a Tags column never hit the tags table.
+        let tagCache: Map<string, number> | null = null;
+        const resolveTagIds = async (names: string[]): Promise<number[]> => {
+          if (!tagCache) {
+            tagCache = new Map<string, number>();
+            for (const t of await listTags()) tagCache.set(t.name.toLowerCase(), t.id);
+          }
+          const ids: number[] = [];
+          for (const raw of names) {
+            const name = raw.trim();
+            if (!name) continue;
+            const key = name.toLowerCase();
+            let id = tagCache.get(key);
+            if (id === undefined) {
+              const created = await createTag({ name });
+              id = created.id;
+              tagCache.set(key, id);
+            }
+            if (!ids.includes(id)) ids.push(id);
+          }
+          return ids;
+        };
         // Mirror each lead into the contacts table and link the tag
         const CHUNK = 20;
         const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -305,10 +330,18 @@ export const appRouter = router({
               callRecordingUrl: r.callRecordingUrl,
               objections:       r.objections,
               dealResult:       r.dealResult,
+              status:    r.status || undefined,
               notes:     null,
               ...(r.createdAt ? (() => { const d = parseDate(r.createdAt); return d ? { createdAt: d } : {}; })() : {}),
             });
-            if (contact?.id) contactIds.push(contact.id);
+            if (contact?.id) {
+              contactIds.push(contact.id);
+              // Apply per-row tags (from a CSV column mapped to Tags), creating any that are missing.
+              if (r.tags && r.tags.length > 0) {
+                const tagIds = await resolveTagIds(r.tags);
+                for (const tagId of tagIds) await bulkAddTagToContacts([contact.id], tagId);
+              }
+            }
           }
           if (input.tagId && contactIds.length > 0) {
             await bulkAddTagToContacts(contactIds, input.tagId);

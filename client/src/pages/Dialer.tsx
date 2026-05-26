@@ -81,6 +81,8 @@ const CONTACT_FIELDS = [
   { value: "callRecordingUrl", label: "Call Recording URL" },
   { value: "objections",       label: "Objections" },
   { value: "dealResult",       label: "Deal Result" },
+  { value: "status",           label: "Status" },
+  { value: "tags",             label: "Tags" },
   { value: "createdAt",   label: "Date Created ★" },
 ] as const;
 
@@ -112,6 +114,16 @@ const CONTACT_STATUSES: { value: string; label: string; color: string; bg: strin
 ];
 function getStatusMeta(status: string | null | undefined) {
   return CONTACT_STATUSES.find(s => s.value === status) ?? null;
+}
+// Resolve a free-text CSV status (label or slug) to a canonical status value, or undefined if unknown.
+function resolveStatusValue(raw: string | undefined | null): string | undefined {
+  const v = (raw ?? "").trim().toLowerCase();
+  if (!v) return undefined;
+  const slug = v.replace(/[\s/]+/g, "_").replace(/_+/g, "_");
+  const match = CONTACT_STATUSES.find(
+    s => s.value === slug || s.value === v || s.label.toLowerCase() === v
+  );
+  return match?.value;
 }
 
 // Deal result — distinct from free-text `outcome` notes; drives the WON/LOST/PENDING counters.
@@ -233,6 +245,8 @@ function autoDetectField(header: string): ContactFieldKey {
   if (/recording|fathom|call.?url|drive.?link/i.test(h)) return "callRecordingUrl";
   if (/objection/i.test(h)) return "objections";
   if (/deal.?result|won.?lost|result/i.test(h)) return "dealResult";
+  if (/status|stage|no.?show|show/i.test(h)) return "status";
+  if (/^tags?$|niche|category/i.test(h)) return "tags";
   if (/date.?created|created.?at|created.?date|date.?added|added.?date|^date$/i.test(h)) return "createdAt";
   return "skip";
 }
@@ -1847,7 +1861,7 @@ export default function Dialer() {
       return mapped;
     });
 
-    const KNOWN_FIELDS = ["phone", "name", "company", "email", "source", "criteria1", "criteria2", "criteria3", "criteria4", "criteria5", "closer", "priceQuoted", "callRecordingUrl", "objections", "dealResult", "createdAt"];
+    const KNOWN_FIELDS = ["phone", "name", "company", "email", "source", "criteria1", "criteria2", "criteria3", "criteria4", "criteria5", "closer", "priceQuoted", "callRecordingUrl", "objections", "dealResult", "status", "tags", "createdAt"];
     // Normalize phones to E.164 (AU default); rows that can't be normalized are skipped.
     const rowsWithPhone = normalizedRows.map((r) => ({ row: r, phone: normalizeAuPhone(r.phone) }));
     const skippedCount = rowsWithPhone.filter((x) => x.phone === null).length;
@@ -1869,6 +1883,8 @@ export default function Dialer() {
         callRecordingUrl: r.callRecordingUrl?.trim() || undefined,
         objections:       r.objections?.trim()       || undefined,
         dealResult:       r.dealResult?.trim()       || undefined,
+        status:    resolveStatusValue(r.status),
+        tags:      (r.tags ?? "").split(",").map(t => t.trim()).filter(Boolean),
         createdAt: r.createdAt?.trim() || undefined,
         extraData: Object.fromEntries(
           Object.entries(r).filter(([k]) => !KNOWN_FIELDS.includes(k))
