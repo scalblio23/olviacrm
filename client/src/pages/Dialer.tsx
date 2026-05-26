@@ -5,6 +5,7 @@ import {
   DragStartEvent, DragEndEvent, useDroppable, useDraggable,
 } from "@dnd-kit/core";
 import { trpc } from "@/lib/trpc";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { normalizeAuPhone } from "@shared/phone";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useTelnyxPhone } from "@/hooks/useTelnyxPhone";
@@ -1594,6 +1595,16 @@ export default function Dialer() {
     });
   }, [filteredContactList, sortCol, sortDir]);
 
+  // Virtualize the list view so the full (uncapped) contact set renders only
+  // the visible rows — keeps the DOM light at thousands of contacts.
+  const listScrollRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: sortedContactList.length,
+    getScrollElement: () => listScrollRef.current,
+    estimateSize: () => 49,
+    overscan: 12,
+  });
+
   function handleSort(col: string) {
     if (sortCol === col) {
       if (sortDir === "asc") setSortDir("desc");
@@ -2718,7 +2729,7 @@ export default function Dialer() {
                 onStatusChange={(contactId, status) => setStatusMutation.mutate({ contactId, status })}  
               />
             ) : (
-              <div className="flex-1 overflow-auto" style={{ minHeight: 0, scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.15) transparent' }}>
+              <div ref={listScrollRef} className="flex-1 overflow-auto" style={{ minHeight: 0, scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.15) transparent' }}>
                 <table className="w-full border-collapse" style={{ minWidth: '1600px' }}>
                   <thead className="sticky top-0 z-10" style={{ background: 'hsl(var(--background))' }}>
                      <tr className="border-b border-border text-xs font-semibold uppercase tracking-wide text-muted-foreground" style={{ background: 'hsl(var(--background))' }}>
@@ -2752,29 +2763,46 @@ export default function Dialer() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedContactList.map((c) => {
-                      const isSelected = selectedContactIds.has(c.id);
+                    {(() => {
+                      const colSpan = 1 + CONTACT_COLUMNS.filter(({ col }) => visibleColumnSet.has(col)).length;
+                      const virtualRows = rowVirtualizer.getVirtualItems();
+                      const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
+                      const paddingBottom = virtualRows.length > 0
+                        ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
+                        : 0;
                       return (
-                        <ContactTableRow
-                          key={c.id}
-                          contact={c}
-                          initialTags={(c as any).tags ?? []}
-                          visibleColumns={visibleColumnSet}
-                          selected={isSelected}
-                          onToggle={() => {
-                            setSelectedContactIds(prev => {
-                              const next = new Set(prev);
-                              if (next.has(c.id)) next.delete(c.id); else next.add(c.id);
-                              return next;
-                            });
-                          }}
-                          onClick={() => {
-                            setActiveContact({ phone: c.phone, name: c.name ?? undefined, leadId: undefined });
-                            setLeftTabPersist("conversations");
-                          }}
-                        />
+                        <>
+                          {paddingTop > 0 && <tr aria-hidden><td colSpan={colSpan} style={{ height: paddingTop, padding: 0, border: 0 }} /></tr>}
+                          {virtualRows.map((vr) => {
+                            const c = sortedContactList[vr.index];
+                            const isSelected = selectedContactIds.has(c.id);
+                            return (
+                              <ContactTableRow
+                                key={c.id}
+                                contact={c}
+                                initialTags={(c as any).tags ?? []}
+                                visibleColumns={visibleColumnSet}
+                                selected={isSelected}
+                                measureRef={rowVirtualizer.measureElement}
+                                dataIndex={vr.index}
+                                onToggle={() => {
+                                  setSelectedContactIds(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(c.id)) next.delete(c.id); else next.add(c.id);
+                                    return next;
+                                  });
+                                }}
+                                onClick={() => {
+                                  setActiveContact({ phone: c.phone, name: c.name ?? undefined, leadId: undefined });
+                                  setLeftTabPersist("conversations");
+                                }}
+                              />
+                            );
+                          })}
+                          {paddingBottom > 0 && <tr aria-hidden><td colSpan={colSpan} style={{ height: paddingBottom, padding: 0, border: 0 }} /></tr>}
+                        </>
                       );
-                    })}
+                    })()}
                   </tbody>
                 </table>
               </div>
@@ -4148,6 +4176,8 @@ function ContactTableRow({
   selected,
   onToggle,
   onClick,
+  measureRef,
+  dataIndex,
 }: {
   contact: Contact;
   initialTags: TagType[];
@@ -4155,6 +4185,8 @@ function ContactTableRow({
   selected: boolean;
   onToggle: () => void;
   onClick: () => void;
+  measureRef?: (el: HTMLTableRowElement | null) => void;
+  dataIndex?: number;
 }) {
   // When no set is provided, fall back to the default columns (keeps the secondary list unchanged).
   const show = (col: string) => visibleColumns ? visibleColumns.has(col) : DEFAULT_CONTACT_COLUMNS.includes(col);
@@ -4202,6 +4234,8 @@ function ContactTableRow({
 
   return (
     <tr
+      ref={measureRef}
+      data-index={dataIndex}
       className={`border-b border-border/50 transition-colors ${
         selected ? "bg-primary/5" : "hover:bg-accent/30"
       }`}

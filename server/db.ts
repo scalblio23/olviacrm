@@ -466,7 +466,10 @@ export async function listContacts(opts?: {
   const filtered = conditions.length > 0
     ? query.where(and(...conditions))
     : query;
-  const rows = await filtered.orderBy(desc(contacts.createdAt)).limit(1000);
+  // Full dataset is loaded client-side (filters/search/sort/Kanban all run in
+  // memory) and the list view virtualizes rows. This high ceiling is a safety
+  // valve, not a page size; beyond it we'd switch to server-side pagination.
+  const rows = await filtered.orderBy(desc(contacts.createdAt)).limit(25000);
   if (rows.length === 0) return [];
 
   // Fetch all tag junctions for these contacts in one query (no N+1)
