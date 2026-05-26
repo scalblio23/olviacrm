@@ -17,6 +17,8 @@ export const users = mysqlTable("users", {
   inviteSequenceStep: int("inviteSequenceStep").default(0).notNull(),
   inviteCronTaskUid: varchar("inviteCronTaskUid", { length: 65 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  /** Per-user UI preferences as a JSON string (e.g. visible contact columns). Extensible bag for future prefs. */
+  preferences: text("preferences"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),

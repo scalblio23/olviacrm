@@ -176,6 +176,13 @@
       "when": 1779776285596,
       "tag": "0024_overconfident_venom",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "5",
+      "when": 1779785150948,
+      "tag": "0025_curvy_leo",
+      "breakpoints": true
     }
   ]
 }
