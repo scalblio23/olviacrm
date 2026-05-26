@@ -114,6 +114,8 @@ const CONTACT_COLUMNS: { col: string; label: string; w: string }[] = [
 // Pipeline fields are available to toggle on but hidden by default.
 const HIDDEN_BY_DEFAULT_COLUMNS = ["dealResult", "closer", "priceQuoted", "callRecordingUrl", "objections"];
 const DEFAULT_CONTACT_COLUMNS = CONTACT_COLUMNS.map(c => c.col).filter(col => !HIDDEN_BY_DEFAULT_COLUMNS.includes(col));
+// Always-on columns can't be toggled off, so the table can never be emptied of its key identifiers.
+const ALWAYS_ON_COLUMNS = ["name", "phone"];
 
 // Tag color palette
 const TAG_COLORS = [
@@ -1387,17 +1389,23 @@ export default function Dialer() {
     onSettled: () => prefsUtils.preferences.get.invalidate(),
   });
   const [visibleColumns, setVisibleColumns] = useState<string[]>(DEFAULT_CONTACT_COLUMNS);
+  // Always-on columns are forced present and ordered first.
+  const withAlwaysOn = (cols: string[]) => [
+    ...ALWAYS_ON_COLUMNS.filter(c => CONTACT_COLUMNS.some(col => col.col === c)),
+    ...cols.filter(c => !ALWAYS_ON_COLUMNS.includes(c)),
+  ];
   // Hydrate from the server preference once it loads.
   useEffect(() => {
     const stored = (userPrefs as { contactColumns?: unknown } | undefined)?.contactColumns;
     if (Array.isArray(stored)) {
       const valid = stored.filter((c): c is string => typeof c === "string" && CONTACT_COLUMNS.some(col => col.col === c));
-      if (valid.length > 0) setVisibleColumns(valid);
+      if (valid.length > 0) setVisibleColumns(withAlwaysOn(valid));
     }
   }, [userPrefs]);
   const visibleColumnSet = useMemo(() => new Set(visibleColumns), [visibleColumns]);
   const [columnMenuOpen, setColumnMenuOpen] = useState(false);
   const toggleColumn = (col: string) => {
+    if (ALWAYS_ON_COLUMNS.includes(col)) return; // pinned — can't be toggled off
     setVisibleColumns(prev => {
       const next = prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col];
       updatePrefsMutation.mutate({ contactColumns: next });
@@ -2259,14 +2267,17 @@ export default function Dialer() {
                       <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide px-2 py-1.5">Visible Columns</p>
                       {CONTACT_COLUMNS.map(({ col, label }) => {
                         const checked = visibleColumnSet.has(col);
+                        const pinned = ALWAYS_ON_COLUMNS.includes(col);
                         return (
                           <button
                             key={col}
                             onClick={() => toggleColumn(col)}
-                            className="flex items-center gap-2 px-2 py-1.5 rounded text-xs w-full text-left hover:bg-accent transition-colors"
+                            disabled={pinned}
+                            className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs w-full text-left transition-colors ${pinned ? "cursor-default opacity-70" : "hover:bg-accent"}`}
                           >
-                            <Checkbox checked={checked} className="w-3.5 h-3.5 pointer-events-none" />
+                            <Checkbox checked={checked} disabled={pinned} className="w-3.5 h-3.5 pointer-events-none" />
                             <span className="truncate">{label}</span>
+                            {pinned && <span className="ml-auto text-[9px] text-muted-foreground uppercase tracking-wide">Pinned</span>}
                           </button>
                         );
                       })}
