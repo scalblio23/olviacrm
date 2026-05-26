@@ -5,6 +5,7 @@ import {
   DragStartEvent, DragEndEvent, useDroppable, useDraggable,
 } from "@dnd-kit/core";
 import { trpc } from "@/lib/trpc";
+import { normalizeAuPhone } from "@shared/phone";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useTelnyxPhone } from "@/hooks/useTelnyxPhone";
 import {
@@ -572,6 +573,7 @@ function CsvMappingModal({
   open,
   headers,
   previewRows,
+  allRows,
   totalRows,
   allTags,
   onImport,
@@ -581,6 +583,7 @@ function CsvMappingModal({
   open: boolean;
   headers: string[];
   previewRows: Record<string, string>[];
+  allRows: Record<string, string>[];
   totalRows: number;
   allTags: TagType[];
   onImport: (mapping: Record<string, ContactFieldKey>, tagId: number) => void;
@@ -776,6 +779,40 @@ function CsvMappingModal({
           </div>
         </div>
 
+        {/* Phone normalization preview — original → E.164 */}
+        {(() => {
+          const phoneHeader = Object.entries(mapping).find(([, f]) => f === "phone")?.[0];
+          if (!phoneHeader) return null;
+          const samples = allRows
+            .map((r) => (r[phoneHeader] ?? "").trim())
+            .filter((v) => v !== "")
+            .slice(0, 5)
+            .map((original) => ({ original, normalized: normalizeAuPhone(original) }));
+          const invalidCount = allRows.reduce((n, r) => n + (normalizeAuPhone(r[phoneHeader]) === null ? 1 : 0), 0);
+          return (
+            <div className="space-y-2 pt-1">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Phone Preview</Label>
+              <div className="rounded-lg border border-border/50 bg-muted/40 divide-y divide-border/40">
+                {samples.map(({ original, normalized }, i) => (
+                  <div key={i} className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs font-mono">
+                    <span className="text-muted-foreground truncate">{original}</span>
+                    <span className="text-muted-foreground/40">→</span>
+                    {normalized
+                      ? <span className="text-foreground truncate">{normalized}</span>
+                      : <span className="text-red-500 dark:text-red-400 italic shrink-0">skipped — invalid</span>}
+                  </div>
+                ))}
+              </div>
+              {invalidCount > 0 ? (
+                <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+                  <strong>{invalidCount}</strong> of {totalRows} row{totalRows !== 1 ? "s" : ""} will be skipped — invalid phone.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">All {totalRows} phone number{totalRows !== 1 ? "s" : ""} normalize cleanly.</p>
+              )}
+            </div>
+          );
+        })()}
          {!hasPhone && (
           <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
             Map at least one column to <strong>Phone</strong> to import contacts.
@@ -1811,10 +1848,13 @@ export default function Dialer() {
     });
 
     const KNOWN_FIELDS = ["phone", "name", "company", "email", "source", "criteria1", "criteria2", "criteria3", "criteria4", "criteria5", "closer", "priceQuoted", "callRecordingUrl", "objections", "dealResult", "createdAt"];
-    const leadRows = normalizedRows
-      .filter((r) => r.phone?.trim())
-      .map((r) => ({
-        phone:     r.phone.trim(),
+    // Normalize phones to E.164 (AU default); rows that can't be normalized are skipped.
+    const rowsWithPhone = normalizedRows.map((r) => ({ row: r, phone: normalizeAuPhone(r.phone) }));
+    const skippedCount = rowsWithPhone.filter((x) => x.phone === null).length;
+    const leadRows = rowsWithPhone
+      .filter((x): x is { row: Record<string, string>; phone: string } => x.phone !== null)
+      .map(({ row: r, phone }) => ({
+        phone:     phone,
         name:      r.name?.trim()      || undefined,
         company:   r.company?.trim()   || undefined,
         email:     r.email?.trim()     || undefined,
@@ -1835,7 +1875,10 @@ export default function Dialer() {
         ),
       }));
 
-    if (leadRows.length === 0) { toast.error("No valid phone numbers found after mapping"); return; }
+    if (leadRows.length === 0) {
+      toast.error(skippedCount > 0 ? `No valid phone numbers — ${skippedCount} row${skippedCount !== 1 ? "s" : ""} skipped (invalid phone)` : "No valid phone numbers found after mapping");
+      return;
+    }
 
     try {
       const result = await uploadMutation.mutateAsync({
@@ -1849,7 +1892,8 @@ export default function Dialer() {
       localStorage.setItem("loop_sessionTagId", String(tagId));
       setSelectedLeadId(null);
       setCsvPending(null);
-      toast.success(`Imported ${leadRows.length} leads from ${file.name}${tagId ? " with tag" : ""}`);
+      const skippedNote = skippedCount > 0 ? ` (${skippedCount} skipped — invalid phone)` : "";
+      toast.success(`Imported ${result.imported ?? leadRows.length} contact${(result.imported ?? leadRows.length) !== 1 ? "s" : ""} from ${file.name}${skippedNote}`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       toast.error(`Upload failed: ${msg.slice(0, 120)}`);
@@ -3616,6 +3660,7 @@ export default function Dialer() {
           open={!!csvPending}
           headers={csvPending.headers}
           previewRows={csvPending.rows.slice(0, 3)}
+          allRows={csvPending.rows}
           totalRows={csvPending.rows.length}
           allTags={allTags}
           onImport={handleCsvImport}
@@ -3812,8 +3857,16 @@ export default function Dialer() {
             <Button
               disabled={!contactForm.name.trim() || (!activeContact?.phone && !contactForm.phone.trim()) || upsertContactMutation.isPending}
               onClick={() => {
-                const phone = activeContact?.phone ?? contactForm.phone.trim();
-                if (!phone) return;
+                // Existing contacts already store an E.164 phone; only normalize manual entry.
+                let phone = activeContact?.phone ?? "";
+                if (!phone) {
+                  const normalized = normalizeAuPhone(contactForm.phone);
+                  if (!normalized) {
+                    toast.error("Invalid phone number — enter a valid Australian or international number.");
+                    return;
+                  }
+                  phone = normalized;
+                }
                 upsertContactMutation.mutate({
                   phone,
                   name:      contactForm.name.trim(),
