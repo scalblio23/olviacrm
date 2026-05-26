@@ -1,4 +1,4 @@
-import { eq, asc, desc, inArray, and, gte, lte } from "drizzle-orm";
+import { eq, asc, desc, inArray, and, gte, lte, count } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, User, leads, leadSessions, InsertLead, Lead, callHistory, InsertCallHistory, CallHistoryRecord, smsMessages, InsertSmsMessage, SmsMessage, contacts, InsertContact, Contact, tags, InsertTag, Tag, contactTags, smartlists, Smartlist, InsertSmartlist, userTagPermissions, emailMessages, EmailMessage, automations, Automation, InsertAutomation, automationSteps, AutomationStep, InsertAutomationStep, automationEnrollments, AutomationEnrollment, calendars, Calendar, InsertCalendar, appointments, Appointment, InsertAppointment, appSettings, automationExecutionLogs, AutomationExecutionLog, InsertAutomationExecutionLog, updates, Update, updateDismissals } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -393,6 +393,46 @@ export async function bulkUpdateContactStatus(ids: number[], status: string | nu
 }
 
 export type ContactWithTags = Contact & { tags: Tag[] };
+
+/**
+ * Aggregate counts across ALL contacts (not capped like listContacts), for the
+ * pipeline counter strip. Computed in SQL so it reflects the true totals.
+ */
+export async function getContactStats(opts?: { tagIds?: number[] }): Promise<{
+  total: number;
+  byStatus: Record<string, number>;
+  byDealResult: Record<string, number>;
+}> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Scope to a set of tag ids (per-user permissions) when provided.
+  let where;
+  if (opts?.tagIds && opts.tagIds.length > 0) {
+    const junctions = await db
+      .select({ contactId: contactTags.contactId })
+      .from(contactTags)
+      .where(inArray(contactTags.tagId, opts.tagIds));
+    const ids = Array.from(new Set(junctions.map(j => j.contactId)));
+    if (ids.length === 0) return { total: 0, byStatus: {}, byDealResult: {} };
+    where = inArray(contacts.id, ids);
+  }
+
+  const baseTotal = db.select({ total: count() }).from(contacts);
+  const [totalRow] = await (where ? baseTotal.where(where) : baseTotal);
+
+  const baseStatus = db.select({ status: contacts.status, n: count() }).from(contacts);
+  const statusRows = await (where ? baseStatus.where(where) : baseStatus).groupBy(contacts.status);
+
+  const baseDeal = db.select({ dealResult: contacts.dealResult, n: count() }).from(contacts);
+  const dealRows = await (where ? baseDeal.where(where) : baseDeal).groupBy(contacts.dealResult);
+
+  const byStatus: Record<string, number> = {};
+  for (const r of statusRows) if (r.status) byStatus[r.status] = Number(r.n);
+  const byDealResult: Record<string, number> = {};
+  for (const r of dealRows) if (r.dealResult) byDealResult[r.dealResult] = Number(r.n);
+  return { total: Number(totalRow?.total ?? 0), byStatus, byDealResult };
+}
 
 export async function listContacts(opts?: {
   dateFrom?: Date;

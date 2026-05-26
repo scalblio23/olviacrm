@@ -29,6 +29,7 @@ import {
   getSmsThread,
   upsertContact,
   listContacts,
+  getContactStats,
   getContactByPhone,
   deleteContact,
   bulkDeleteContacts,
@@ -607,6 +608,18 @@ export const appRouter = router({
           dateTo:   input?.dateTo   ? new Date(input.dateTo)   : undefined,
           tagIds:   effectiveTagIds,
         });
+      }),
+    // Accurate pipeline counts over ALL contacts (not capped like list). Scoped
+    // to a non-admin user's permitted tags, matching list's access rules.
+    stats: publicProcedure
+      .query(async ({ ctx }) => {
+        const user = (ctx as any).user;
+        if (user && user.role !== 'admin') {
+          const permittedTagIds = await getUserPermittedTagIds(user.id);
+          if (permittedTagIds.length === 0) return { total: 0, byStatus: {}, byDealResult: {} };
+          return getContactStats({ tagIds: permittedTagIds });
+        }
+        return getContactStats();
       }),
     getActivePhones: publicProcedure
       .query(async () => {

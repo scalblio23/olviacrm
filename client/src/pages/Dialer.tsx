@@ -1464,10 +1464,17 @@ export default function Dialer() {
     dateTo:   contactDateTo   ? new Date(contactDateTo).getTime()   : undefined,
     tagIds:   contactTagFilters.length > 0 ? contactTagFilters : undefined,
   }), [contactDateFrom, contactDateTo, contactTagFilters]);
-  const { data: contactList = [], refetch: refetchContacts } = trpc.contacts.list.useQuery(
+  const { data: contactList = [], refetch: refetchContactsRaw } = trpc.contacts.list.useQuery(
     contactFiltersInput,
     { staleTime: 30_000 }
   );
+  // Accurate pipeline counts over ALL contacts (the list above is capped at 1000 rows).
+  const { data: contactStats, refetch: refetchContactStats } = trpc.contacts.stats.useQuery(undefined, { staleTime: 30_000 });
+  // Refresh the list and the counter aggregates together.
+  const refetchContacts = useCallback(() => {
+    void refetchContactsRaw();
+    void refetchContactStats();
+  }, [refetchContactsRaw, refetchContactStats]);
   // Smart sort helpers
   function detectSortType(values: string[]): "date" | "number" | "text" {
     const nonEmpty = values.filter(v => v && v !== "—");
@@ -2311,18 +2318,20 @@ export default function Dialer() {
                 </div>
               </div>
             </div>
-            {/* ── Pipeline counters — always global (ignore active filters) ── */}
+            {/* ── Pipeline counters — true totals over ALL contacts (not the capped list) ── */}
             {(() => {
-              const by = (pred: (c: any) => boolean) => contactList.reduce((n, c) => n + (pred(c) ? 1 : 0), 0);
+              // Prefer the server-side aggregate; fall back to the loaded list until it arrives.
+              const st = (s: string) => contactStats ? (contactStats.byStatus[s] ?? 0) : contactList.reduce((n, c) => n + ((c as any).status === s ? 1 : 0), 0);
+              const dr = (d: string) => contactStats ? (contactStats.byDealResult[d] ?? 0) : contactList.reduce((n, c) => n + ((c as any).dealResult === d ? 1 : 0), 0);
               const counters = [
-                { label: "TOTAL",      value: contactList.length,                  accent: "#a78bfa" },
-                { label: "SHOWS",      value: by(c => c.status === "show"),         accent: "#4ade80" },
-                { label: "NO SHOW",    value: by(c => c.status === "no_show"),      accent: "#f87171" },
-                { label: "UPCOMING",   value: by(c => c.status === "upcoming"),     accent: "#38bdf8" },
-                { label: "NOT BOOKED", value: by(c => c.status === "not_booked"),   accent: "#94a3b8" },
-                { label: "WON",        value: by(c => c.dealResult === "won"),      accent: "#22c55e" },
-                { label: "LOST",       value: by(c => c.dealResult === "lost"),     accent: "#ef4444" },
-                { label: "PENDING",    value: by(c => c.dealResult === "pending"),  accent: "#f59e0b" },
+                { label: "TOTAL",      value: contactStats ? contactStats.total : contactList.length, accent: "#a78bfa" },
+                { label: "SHOWS",      value: st("show"),         accent: "#4ade80" },
+                { label: "NO SHOW",    value: st("no_show"),      accent: "#f87171" },
+                { label: "UPCOMING",   value: st("upcoming"),     accent: "#38bdf8" },
+                { label: "NOT BOOKED", value: st("not_booked"),   accent: "#94a3b8" },
+                { label: "WON",        value: dr("won"),          accent: "#22c55e" },
+                { label: "LOST",       value: dr("lost"),         accent: "#ef4444" },
+                { label: "PENDING",    value: dr("pending"),      accent: "#f59e0b" },
               ];
               return (
                 <div className="flex items-stretch gap-2 overflow-x-auto px-6 py-3 border-b border-border shrink-0 bg-background/40">
@@ -4187,7 +4196,7 @@ function ContactTableRow({
   const currentStatus = optimisticStatus !== undefined ? optimisticStatus : (contact as any).status ?? null;
   const statusMeta = getStatusMeta(currentStatus);
   const setStatusRowMutation = trpc.contacts.setStatus.useMutation({
-    onSuccess: () => utils.contacts.list.invalidate(),
+    onSuccess: () => { utils.contacts.list.invalidate(); utils.contacts.stats.invalidate(); },
     onError: () => setOptimisticStatus(undefined),
   });
 
