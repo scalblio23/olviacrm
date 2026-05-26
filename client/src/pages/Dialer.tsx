@@ -5,12 +5,11 @@ import {
   DragStartEvent, DragEndEvent, useDroppable, useDraggable,
 } from "@dnd-kit/core";
 import { trpc } from "@/lib/trpc";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { normalizeAuPhone } from "@shared/phone";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useTelnyxPhone } from "@/hooks/useTelnyxPhone";
 import {
-  Phone, MessageSquare, Upload, Search, ChevronRight,
+  Phone, MessageSquare, Upload, Search, ChevronRight, ChevronLeft,
   CheckCircle2, PhoneMissed, Clock, CalendarCheck, FileText,
   X, Loader2, PhoneCall, Sun, Moon, Send, Hash,
   Mic, PhoneOff, ArrowUpRight, ArrowDownLeft,
@@ -1595,15 +1594,28 @@ export default function Dialer() {
     });
   }, [filteredContactList, sortCol, sortDir]);
 
-  // Virtualize the list view so the full (uncapped) contact set renders only
-  // the visible rows — keeps the DOM light at thousands of contacts.
-  const listScrollRef = useRef<HTMLDivElement>(null);
-  const rowVirtualizer = useVirtualizer({
-    count: sortedContactList.length,
-    getScrollElement: () => listScrollRef.current,
-    estimateSize: () => 49,
-    overscan: 12,
+  // Traditional pagination for the list view — client-side over the already
+  // filtered/sorted set, so filters/search/sort/column toggles and the counter
+  // strip are all untouched. Kanban keeps its own (full-list) rendering.
+  const [contactPageSize, setContactPageSizeState] = useState<number>(() => {
+    const stored = Number(localStorage.getItem("loop_contactPageSize"));
+    return [20, 50, 100].includes(stored) ? stored : 20;
   });
+  const setContactPageSize = (n: number) => {
+    setContactPageSizeState(n);
+    localStorage.setItem("loop_contactPageSize", String(n));
+  };
+  const [contactPage, setContactPage] = useState(1);
+  const contactPageCount = Math.max(1, Math.ceil(sortedContactList.length / contactPageSize));
+  const safeContactPage = Math.min(contactPage, contactPageCount);
+  // Reset to the first page whenever the result set or page size changes.
+  useEffect(() => {
+    setContactPage(1);
+  }, [contactSearch, filterRules, contactPageSize, contactDateFrom, contactDateTo, contactTagFilters]);
+  const pagedContactList = useMemo(
+    () => sortedContactList.slice((safeContactPage - 1) * contactPageSize, (safeContactPage - 1) * contactPageSize + contactPageSize),
+    [sortedContactList, safeContactPage, contactPageSize],
+  );
 
   function handleSort(col: string) {
     if (sortCol === col) {
@@ -2729,7 +2741,8 @@ export default function Dialer() {
                 onStatusChange={(contactId, status) => setStatusMutation.mutate({ contactId, status })}  
               />
             ) : (
-              <div ref={listScrollRef} className="flex-1 overflow-auto" style={{ minHeight: 0, scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.15) transparent' }}>
+              <>
+              <div className="flex-1 overflow-auto" style={{ minHeight: 0, scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.15) transparent' }}>
                 <table className="w-full border-collapse" style={{ minWidth: '1600px' }}>
                   <thead className="sticky top-0 z-10" style={{ background: 'hsl(var(--background))' }}>
                      <tr className="border-b border-border text-xs font-semibold uppercase tracking-wide text-muted-foreground" style={{ background: 'hsl(var(--background))' }}>
@@ -2763,49 +2776,96 @@ export default function Dialer() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(() => {
-                      const colSpan = 1 + CONTACT_COLUMNS.filter(({ col }) => visibleColumnSet.has(col)).length;
-                      const virtualRows = rowVirtualizer.getVirtualItems();
-                      const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
-                      const paddingBottom = virtualRows.length > 0
-                        ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
-                        : 0;
+                    {pagedContactList.map((c) => {
+                      const isSelected = selectedContactIds.has(c.id);
                       return (
-                        <>
-                          {paddingTop > 0 && <tr aria-hidden><td colSpan={colSpan} style={{ height: paddingTop, padding: 0, border: 0 }} /></tr>}
-                          {virtualRows.map((vr) => {
-                            const c = sortedContactList[vr.index];
-                            const isSelected = selectedContactIds.has(c.id);
-                            return (
-                              <ContactTableRow
-                                key={c.id}
-                                contact={c}
-                                initialTags={(c as any).tags ?? []}
-                                visibleColumns={visibleColumnSet}
-                                selected={isSelected}
-                                measureRef={rowVirtualizer.measureElement}
-                                dataIndex={vr.index}
-                                onToggle={() => {
-                                  setSelectedContactIds(prev => {
-                                    const next = new Set(prev);
-                                    if (next.has(c.id)) next.delete(c.id); else next.add(c.id);
-                                    return next;
-                                  });
-                                }}
-                                onClick={() => {
-                                  setActiveContact({ phone: c.phone, name: c.name ?? undefined, leadId: undefined });
-                                  setLeftTabPersist("conversations");
-                                }}
-                              />
-                            );
-                          })}
-                          {paddingBottom > 0 && <tr aria-hidden><td colSpan={colSpan} style={{ height: paddingBottom, padding: 0, border: 0 }} /></tr>}
-                        </>
+                        <ContactTableRow
+                          key={c.id}
+                          contact={c}
+                          initialTags={(c as any).tags ?? []}
+                          visibleColumns={visibleColumnSet}
+                          selected={isSelected}
+                          onToggle={() => {
+                            setSelectedContactIds(prev => {
+                              const next = new Set(prev);
+                              if (next.has(c.id)) next.delete(c.id); else next.add(c.id);
+                              return next;
+                            });
+                          }}
+                          onClick={() => {
+                            setActiveContact({ phone: c.phone, name: c.name ?? undefined, leadId: undefined });
+                            setLeftTabPersist("conversations");
+                          }}
+                        />
                       );
-                    })()}
+                    })}
                   </tbody>
                 </table>
               </div>
+              {/* ── Pagination footer (list view) ── */}
+              <div className="shrink-0 flex items-center justify-between gap-3 px-6 py-2.5 border-t border-border bg-background/70">
+                <div className="text-xs text-muted-foreground">
+                  {sortedContactList.length === 0
+                    ? "No contacts"
+                    : `Showing ${((safeContactPage - 1) * contactPageSize + 1).toLocaleString()}–${Math.min(safeContactPage * contactPageSize, sortedContactList.length).toLocaleString()} of ${sortedContactList.length.toLocaleString()}`}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setContactPage(p => Math.max(1, p - 1))}
+                    disabled={safeContactPage <= 1}
+                    className="flex items-center gap-1 h-7 px-2 rounded-md border border-border text-xs text-muted-foreground hover:text-foreground hover:border-border/80 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  >
+                    <ChevronLeft size={13} /> Prev
+                  </button>
+                  {(() => {
+                    const total = contactPageCount;
+                    const cur = safeContactPage;
+                    const items: (number | "…")[] = [];
+                    for (let p = 1; p <= total; p++) {
+                      if (p === 1 || p === total || (p >= cur - 1 && p <= cur + 1)) items.push(p);
+                      else if (items[items.length - 1] !== "…") items.push("…");
+                    }
+                    return items.map((it, i) =>
+                      it === "…" ? (
+                        <span key={`e${i}`} className="px-1.5 text-xs text-muted-foreground/50 select-none">…</span>
+                      ) : (
+                        <button
+                          key={it}
+                          onClick={() => setContactPage(it)}
+                          className={`min-w-7 h-7 px-2 rounded-md text-xs font-medium border transition-all ${
+                            it === cur
+                              ? "border-primary/50 bg-primary/10 text-primary"
+                              : "border-border text-muted-foreground hover:text-foreground hover:border-border/80"
+                          }`}
+                        >
+                          {it}
+                        </button>
+                      ),
+                    );
+                  })()}
+                  <button
+                    onClick={() => setContactPage(p => Math.min(contactPageCount, p + 1))}
+                    disabled={safeContactPage >= contactPageCount}
+                    className="flex items-center gap-1 h-7 px-2 rounded-md border border-border text-xs text-muted-foreground hover:text-foreground hover:border-border/80 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  >
+                    Next <ChevronRight size={13} />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="hidden sm:inline">Page {safeContactPage} of {contactPageCount}</span>
+                  <Select value={String(contactPageSize)} onValueChange={(v) => setContactPageSize(Number(v))}>
+                    <SelectTrigger size="sm" className="h-7 w-[110px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[20, 50, 100].map(n => (
+                        <SelectItem key={n} value={String(n)}>{n} / page</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              </>
             )}
 
             {/* SmartList Delete Confirm Dialog */}
@@ -4176,8 +4236,6 @@ function ContactTableRow({
   selected,
   onToggle,
   onClick,
-  measureRef,
-  dataIndex,
 }: {
   contact: Contact;
   initialTags: TagType[];
@@ -4185,8 +4243,6 @@ function ContactTableRow({
   selected: boolean;
   onToggle: () => void;
   onClick: () => void;
-  measureRef?: (el: HTMLTableRowElement | null) => void;
-  dataIndex?: number;
 }) {
   // When no set is provided, fall back to the default columns (keeps the secondary list unchanged).
   const show = (col: string) => visibleColumns ? visibleColumns.has(col) : DEFAULT_CONTACT_COLUMNS.includes(col);
@@ -4234,8 +4290,6 @@ function ContactTableRow({
 
   return (
     <tr
-      ref={measureRef}
-      data-index={dataIndex}
       className={`border-b border-border/50 transition-colors ${
         selected ? "bg-primary/5" : "hover:bg-accent/30"
       }`}

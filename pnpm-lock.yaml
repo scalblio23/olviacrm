@@ -115,9 +115,6 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.90.2
         version: 5.90.2(react@19.2.1)
-      '@tanstack/react-virtual':
-        specifier: ^3.13.26
-        version: 3.13.26(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       '@telnyx/webrtc':
         specifier: ^2.26.4
         version: 2.26.4
@@ -2163,15 +2160,6 @@ packages:
     resolution: {integrity: sha512-CLABiR+h5PYfOWr/z+vWFt5VsOA2ekQeRQBFSKlcoW6Ndx/f8rfyVmq4LbgOM4GG2qtxAxjLYLOpCNTYm4uKzw==}
     peerDependencies:
       react: ^18 || ^19
-
-  '@tanstack/react-virtual@3.13.26':
-    resolution: {integrity: sha512-DosdgjOxCLahkn0o+ilmZYwEjo1glfMGuRT/j3PQ18yr5XqA8N/BCaL9IJ3B5TRl+nnzyK2IOFgAILwzN3a9xQ==}
-    peerDependencies:
-      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
-      react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
-
-  '@tanstack/virtual-core@3.16.0':
-    resolution: {integrity: sha512-Er2N7q3WOiH6y2JLxsxNX+u2/sLqSsL0bxFgDjuiPiA7vKhZRm+IzcS17vRee3GNXr64UsesA5CAp9yTiIYw9A==}
 
   '@telnyx/webrtc@2.26.4':
     resolution: {integrity: sha512-VRccuBiENAZiHB48Jc88MMdV6WKAfw/5wzXUMvYjpNB70/aMaf2rMEbsjojJ2ZUHTSUpR04KMU5M8xenWl0hgw==}
@@ -6530,14 +6518,6 @@ snapshots:
     dependencies:
       '@tanstack/query-core': 5.90.2
       react: 19.2.1
-
-  '@tanstack/react-virtual@3.13.26(react-dom@19.2.1(react@19.2.1))(react@19.2.1)':
-    dependencies:
-      '@tanstack/virtual-core': 3.16.0
-      react: 19.2.1
-      react-dom: 19.2.1(react@19.2.1)
-
-  '@tanstack/virtual-core@3.16.0': {}
 
   '@telnyx/webrtc@2.26.4':
     dependencies:
