@@ -41,6 +41,8 @@ import {
   updateContactDealResult,
   listTags,
   createTag,
+  getUserPreferences,
+  updateUserPreferences,
   deleteTag,
   getTagsForContact,
   setContactTags,
@@ -193,6 +195,13 @@ const dispositionEnum = z.enum([
 
 export const appRouter = router({
   system: systemRouter,
+  // Per-user UI preferences (extensible JSON bag stored on the user row).
+  preferences: router({
+    get: protectedProcedure.query(({ ctx }) => getUserPreferences(ctx.user.id)),
+    update: protectedProcedure
+      .input(z.record(z.string(), z.unknown()))
+      .mutation(({ ctx, input }) => updateUserPreferences(ctx.user.id, input)),
+  }),
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {

@@ -584,6 +584,31 @@ export async function setUserRole(userId: number, role: "user" | "admin"): Promi
   await db.update(users).set({ role }).where(eq(users.id, userId));
 }
 
+// ─── Per-user preferences (JSON bag) ────────────────────────────────────────────
+export async function getUserPreferences(userId: number): Promise<Record<string, unknown>> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select({ preferences: users.preferences }).from(users).where(eq(users.id, userId)).limit(1);
+  const raw = rows[0]?.preferences;
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Shallow-merge a partial preferences patch into the user's stored JSON and return the merged result. */
+export async function updateUserPreferences(userId: number, patch: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const current = await getUserPreferences(userId);
+  const merged = { ...current, ...patch };
+  await db.update(users).set({ preferences: JSON.stringify(merged) }).where(eq(users.id, userId));
+  return merged;
+}
+
 // ─── User Tag Permission helpers ──────────────────────────────────────────────
 
 /** Returns the tagIds a user is permitted to see. Empty array = no restrictions applied yet. */

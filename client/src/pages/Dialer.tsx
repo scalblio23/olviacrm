@@ -15,7 +15,7 @@ import {
   Mic, PhoneOff, ArrowUpRight, ArrowDownLeft,
   ChevronDown, ChevronUp, ChevronsUpDown, History, Users, Settings, UserPlus, UserCheck, Mail, Building2,
   Tag, Plus, Filter, CircleDot, UserMinus, Globe, Trash2, Zap, CalendarDays,
-  LayoutGrid, List as ListIcon, Share2, Sparkles,
+  LayoutGrid, List as ListIcon, Share2, Sparkles, Columns3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -87,6 +87,33 @@ const CONTACT_FIELDS = [
 ] as const;
 
 type ContactFieldKey = typeof CONTACT_FIELDS[number]["value"];
+
+// ─── Contact table columns (visibility toggleable + persisted per user) ──────────
+const CONTACT_COLUMNS: { col: string; label: string; w: string }[] = [
+  { col: "name",      label: "Name",            w: "w-44" },
+  { col: "phone",     label: "Phone",           w: "w-32" },
+  { col: "email",     label: "Email",           w: "w-44" },
+  { col: "outcome",   label: "Notes / Outcome", w: "w-48" },
+  { col: "company",   label: "Company",         w: "w-32" },
+  { col: "source",    label: "Source",          w: "w-28" },
+  { col: "criteria1", label: "Criteria 1",      w: "w-28" },
+  { col: "criteria2", label: "Criteria 2",      w: "w-28" },
+  { col: "criteria3", label: "Criteria 3",      w: "w-28" },
+  { col: "criteria4", label: "Criteria 4",      w: "w-28" },
+  { col: "criteria5", label: "Criteria 5",      w: "w-28" },
+  { col: "timezone",  label: "Timezone",        w: "w-40" },
+  { col: "status",    label: "Status",          w: "w-28" },
+  { col: "dealResult",       label: "Deal Result",        w: "w-28" },
+  { col: "closer",           label: "Closer",             w: "w-32" },
+  { col: "priceQuoted",      label: "Price Quoted",       w: "w-28" },
+  { col: "callRecordingUrl", label: "Call Recording URL", w: "w-44" },
+  { col: "objections",       label: "Objections",         w: "w-48" },
+  { col: "tags",      label: "Tags",            w: "w-36" },
+  { col: "createdAt", label: "Date Created",    w: "w-28" },
+];
+// Pipeline fields are available to toggle on but hidden by default.
+const HIDDEN_BY_DEFAULT_COLUMNS = ["dealResult", "closer", "priceQuoted", "callRecordingUrl", "objections"];
+const DEFAULT_CONTACT_COLUMNS = CONTACT_COLUMNS.map(c => c.col).filter(col => !HIDDEN_BY_DEFAULT_COLUMNS.includes(col));
 
 // Tag color palette
 const TAG_COLORS = [
@@ -1353,6 +1380,30 @@ export default function Dialer() {
     setContactsViewMode(m);
     try { localStorage.setItem("contacts-view-mode", m); } catch {}
   };
+  // Contact table column visibility — persisted server-side per user.
+  const prefsUtils = trpc.useUtils();
+  const { data: userPrefs } = trpc.preferences.get.useQuery(undefined, { staleTime: 60_000, retry: false });
+  const updatePrefsMutation = trpc.preferences.update.useMutation({
+    onSettled: () => prefsUtils.preferences.get.invalidate(),
+  });
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(DEFAULT_CONTACT_COLUMNS);
+  // Hydrate from the server preference once it loads.
+  useEffect(() => {
+    const stored = (userPrefs as { contactColumns?: unknown } | undefined)?.contactColumns;
+    if (Array.isArray(stored)) {
+      const valid = stored.filter((c): c is string => typeof c === "string" && CONTACT_COLUMNS.some(col => col.col === c));
+      if (valid.length > 0) setVisibleColumns(valid);
+    }
+  }, [userPrefs]);
+  const visibleColumnSet = useMemo(() => new Set(visibleColumns), [visibleColumns]);
+  const [columnMenuOpen, setColumnMenuOpen] = useState(false);
+  const toggleColumn = (col: string) => {
+    setVisibleColumns(prev => {
+      const next = prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col];
+      updatePrefsMutation.mutate({ contactColumns: next });
+      return next;
+    });
+  };
   // AI chat panel state for Contacts tab
   const [showContactsAI, setShowContactsAI] = useState(false);
   const [contactsAIMessages, setContactsAIMessages] = useState<AIChatMessage[]>([]);
@@ -2192,6 +2243,36 @@ export default function Dialer() {
                   <Sparkles size={13} />
                   Ask AI
                 </button>
+                {/* Column visibility (list view only) */}
+                {contactsViewMode === "list" && (
+                  <Popover open={columnMenuOpen} onOpenChange={setColumnMenuOpen}>
+                    <PopoverTrigger asChild>
+                      <button
+                        title="Choose columns"
+                        className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-border/80 transition-all"
+                      >
+                        <Columns3 size={13} />
+                        Columns
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-56 p-1.5 max-h-[420px] overflow-y-auto" align="end">
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide px-2 py-1.5">Visible Columns</p>
+                      {CONTACT_COLUMNS.map(({ col, label }) => {
+                        const checked = visibleColumnSet.has(col);
+                        return (
+                          <button
+                            key={col}
+                            onClick={() => toggleColumn(col)}
+                            className="flex items-center gap-2 px-2 py-1.5 rounded text-xs w-full text-left hover:bg-accent transition-colors"
+                          >
+                            <Checkbox checked={checked} className="w-3.5 h-3.5 pointer-events-none" />
+                            <span className="truncate">{label}</span>
+                          </button>
+                        );
+                      })}
+                    </PopoverContent>
+                  </Popover>
+                )}
                 {/* View toggle */}
                 <div className="flex items-center rounded-lg border border-border overflow-hidden">
                   <button
@@ -2631,23 +2712,7 @@ export default function Dialer() {
                           className="w-4 h-4"
                         />
                       </th>
-                      {([
-                        { col: "name",      label: "Name",            w: "w-44" },
-                        { col: "phone",     label: "Phone",           w: "w-32" },
-                        { col: "email",     label: "Email",           w: "w-44" },
-                        { col: "outcome",   label: "Notes / Outcome", w: "w-48" },
-                        { col: "company",   label: "Company",         w: "w-32" },
-                        { col: "source",    label: "Source",          w: "w-28" },
-                        { col: "criteria1", label: "Criteria 1",      w: "w-28" },
-                        { col: "criteria2", label: "Criteria 2",      w: "w-28" },
-                        { col: "criteria3", label: "Criteria 3",      w: "w-28" },
-                        { col: "criteria4", label: "Criteria 4",      w: "w-28" },
-                        { col: "criteria5", label: "Criteria 5",      w: "w-28" },
-                        { col: "timezone",  label: "Timezone",        w: "w-40" },
-                        { col: "status",    label: "Status",          w: "w-28" },
-                        { col: "tags",      label: "Tags",            w: "w-36" },
-                        { col: "createdAt", label: "Date Created",    w: "w-28" },
-                      ] as { col: string; label: string; w: string }[]).map(({ col, label, w }) => (
+                      {CONTACT_COLUMNS.filter(({ col }) => visibleColumnSet.has(col)).map(({ col, label, w }) => (
                         col === "tags" ? (
                           <th key={col} className={`${w} px-3 py-2.5 text-left font-semibold`}>Tags</th>
                         ) : (
@@ -2674,6 +2739,7 @@ export default function Dialer() {
                           key={c.id}
                           contact={c}
                           initialTags={(c as any).tags ?? []}
+                          visibleColumns={visibleColumnSet}
                           selected={isSelected}
                           onToggle={() => {
                             setSelectedContactIds(prev => {
@@ -4058,16 +4124,20 @@ function OutcomeCell({ contact, utils }: { contact: Contact; utils: ReturnType<t
 function ContactTableRow({
   contact,
   initialTags,
+  visibleColumns,
   selected,
   onToggle,
   onClick,
 }: {
   contact: Contact;
   initialTags: TagType[];
+  visibleColumns?: Set<string>;
   selected: boolean;
   onToggle: () => void;
   onClick: () => void;
 }) {
+  // When no set is provided, fall back to the default columns (keeps the secondary list unchanged).
+  const show = (col: string) => visibleColumns ? visibleColumns.has(col) : DEFAULT_CONTACT_COLUMNS.includes(col);
   const utils = trpc.useUtils();
   const [tagPopoverOpen, setTagPopoverOpen] = useState(false);
   const [showNewTagForm, setShowNewTagForm] = useState(false);
@@ -4125,40 +4195,55 @@ function ContactTableRow({
         />
       </td>
       {/* Name */}
+      {show("name") && (
       <td className="px-3 py-3 max-w-[176px] cursor-pointer" onClick={onClick}>
         <p className="text-sm font-medium text-foreground truncate">{contact.name || "—"}</p>
       </td>
+      )}
       {/* Phone */}
+      {show("phone") && (
       <td className="px-3 py-3 max-w-[128px] cursor-pointer" onClick={onClick}>
         <p className="text-xs font-mono text-muted-foreground truncate">{contact.phone}</p>
       </td>
+      )}
       {/* Email */}
+      {show("email") && (
       <td className="px-3 py-3 max-w-[176px] cursor-pointer" onClick={onClick}>
         <p className="text-xs text-muted-foreground truncate">{contact.email || "—"}</p>
       </td>
+      )}
       {/* Notes / Outcome — moved next to Email */}
+      {show("outcome") && (
       <td className="px-3 py-3 max-w-[192px]" onClick={(e) => e.stopPropagation()}>
         <OutcomeCell contact={contact} utils={utils} />
       </td>
+      )}
       {/* Company */}
+      {show("company") && (
       <td className="px-3 py-3 max-w-[128px] cursor-pointer" onClick={onClick}>
         <p className="text-xs text-muted-foreground truncate">{(contact as any).company || "—"}</p>
       </td>
+      )}
       {/* Source */}
+      {show("source") && (
       <td className="px-3 py-3 max-w-[112px] cursor-pointer" onClick={onClick}>
         <p className="text-xs text-muted-foreground truncate">{(contact as any).source || "—"}</p>
       </td>
+      )}
       {/* Criteria 1-5 */}
-      {(["criteria1","criteria2","criteria3","criteria4","criteria5"] as const).map(k => (
+      {(["criteria1","criteria2","criteria3","criteria4","criteria5"] as const).filter(k => show(k)).map(k => (
         <td key={k} className="px-3 py-3 max-w-[112px] cursor-pointer" onClick={onClick}>
           <p className="text-xs text-muted-foreground truncate">{(contact as any)[k] || "—"}</p>
         </td>
       ))}
       {/* Timezone */}
+      {show("timezone") && (
       <td className="px-3 py-3 max-w-[160px] cursor-pointer" onClick={onClick}>
         <p className="text-xs text-muted-foreground truncate">{(contact as any).timezone || "—"}</p>
       </td>
+      )}
       {/* Status cell */}
+      {show("status") && (
       <td className="px-3 py-3 max-w-[112px]" onClick={(e) => e.stopPropagation()}>
         <Popover open={statusPopoverOpen} onOpenChange={setStatusPopoverOpen}>
           <PopoverTrigger asChild>
@@ -4205,7 +4290,43 @@ function ContactTableRow({
           </PopoverContent>
         </Popover>
       </td>
+      )}
+      {/* Deal Result */}
+      {show("dealResult") && (
+      <td className="px-3 py-3 max-w-[112px] cursor-pointer" onClick={onClick}>
+        {getDealResultMeta((contact as any).dealResult)
+          ? <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: getDealResultMeta((contact as any).dealResult)!.bg, color: getDealResultMeta((contact as any).dealResult)!.color }}>{getDealResultMeta((contact as any).dealResult)!.label}</span>
+          : <span className="text-xs text-muted-foreground">—</span>}
+      </td>
+      )}
+      {/* Closer */}
+      {show("closer") && (
+      <td className="px-3 py-3 max-w-[128px] cursor-pointer" onClick={onClick}>
+        <p className="text-xs text-muted-foreground truncate">{(contact as any).closer || "—"}</p>
+      </td>
+      )}
+      {/* Price Quoted */}
+      {show("priceQuoted") && (
+      <td className="px-3 py-3 max-w-[112px] cursor-pointer" onClick={onClick}>
+        <p className="text-xs text-muted-foreground truncate">{(contact as any).priceQuoted || "—"}</p>
+      </td>
+      )}
+      {/* Call Recording URL */}
+      {show("callRecordingUrl") && (
+      <td className="px-3 py-3 max-w-[176px]" onClick={(e) => e.stopPropagation()}>
+        {(contact as any).callRecordingUrl
+          ? <a href={(contact as any).callRecordingUrl} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline truncate block">{(contact as any).callRecordingUrl}</a>
+          : <span className="text-xs text-muted-foreground">—</span>}
+      </td>
+      )}
+      {/* Objections */}
+      {show("objections") && (
+      <td className="px-3 py-3 max-w-[192px] cursor-pointer" onClick={onClick}>
+        <p className="text-xs text-muted-foreground truncate">{(contact as any).objections || "—"}</p>
+      </td>
+      )}
       {/* Tags + per-row tag button */}
+      {show("tags") && (
       <td className="px-3 py-3 max-w-[144px]" onClick={(e) => e.stopPropagation()}>
       <div className="flex flex-wrap items-center gap-1">
         {contactTags.slice(0, 2).map((t) => (
@@ -4331,12 +4452,15 @@ function ContactTableRow({
         </Popover>
       </div>
       </td>
+      )}
       {/* Date */}
+      {show("createdAt") && (
       <td className="px-3 py-3 max-w-[112px] cursor-pointer" onClick={onClick}>
         <p className="text-xs text-muted-foreground">
           {contact.createdAt ? new Date(contact.createdAt).toLocaleDateString() : "—"}
         </p>
       </td>
+      )}
     </tr>
   );
 }
