@@ -4604,7 +4604,7 @@ function KanbanCard({ contact, onOpenConvo, isDragOverlay = false }: { contact: 
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      className={`rounded-xl border bg-card flex flex-col gap-3 p-4 group transition-all cursor-grab active:cursor-grabbing ${
+      className={`rounded-xl border bg-card flex flex-col gap-3 p-4 group transition-all cursor-grab active:cursor-grabbing overflow-hidden ${
         isDragging && !isDragOverlay ? "opacity-30 border-dashed" : "border-border hover:border-primary/40 hover:shadow-md"
       } ${isDragOverlay ? "shadow-2xl rotate-1 scale-105" : ""}`}
     >
