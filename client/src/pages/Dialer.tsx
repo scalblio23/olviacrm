@@ -8,11 +8,12 @@ import { trpc } from "@/lib/trpc";
 import { normalizeAuPhone } from "@shared/phone";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useTelnyxPhone } from "@/hooks/useTelnyxPhone";
+import type { UseTelnyxPhoneReturn } from "@/hooks/useTelnyxPhone";
 import {
   Phone, MessageSquare, Upload, Search, ChevronRight, ChevronLeft,
   CheckCircle2, PhoneMissed, Clock, CalendarCheck, FileText,
   X, Loader2, PhoneCall, Sun, Moon, Send, Hash,
-  Mic, PhoneOff, ArrowUpRight, ArrowDownLeft,
+  Mic, PhoneOff, ArrowUpRight, ArrowDownLeft, PhoneForwarded, Pause, Play, LogOut,
   ChevronDown, ChevronUp, ChevronsUpDown, History, Users, Settings, UserPlus, UserCheck, Mail, Building2,
   Tag, Plus, Filter, CircleDot, UserMinus, Globe, Trash2, Zap, CalendarDays,
   LayoutGrid, List as ListIcon, Share2, Sparkles, Columns3,
@@ -334,6 +335,152 @@ function PhoneStatusPill({
     <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 text-xs text-emerald-600 dark:text-emerald-400">
       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
       {phoneState === "reconnecting" ? "Reconnecting…" : phoneState === "ended" ? "Call ended" : "Ready"}
+    </div>
+  );
+}
+
+// ─── Conference Panel (browser-only 3-way) ────────────────────────────────────
+
+function ConferencePanel({
+  phone, customerPhone, customerName,
+}: {
+  phone: UseTelnyxPhoneReturn;
+  customerPhone: string;
+  customerName?: string;
+}) {
+  const [targetNumber, setTargetNumber] = useState("");
+  const [warm, setWarm] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  const inConference = !!phone.conferenceToken;
+  const participants = phone.conferenceParticipants;
+  const hasTarget = participants.some((p) => p.role === "target" && p.connected);
+  const anyHeld   = participants.some((p) => p.onHold);
+
+  const run = useCallback(async (fn: () => Promise<void>, label: string) => {
+    setBusy(true);
+    try { await fn(); }
+    catch (e) { toast.error(`${label} failed: ${e instanceof Error ? e.message : "error"}`); }
+    finally { setBusy(false); }
+  }, []);
+
+  // Not yet in a conference — offer to start one with the current contact.
+  if (!inConference) {
+    const canStart = phone.phoneState === "ready";
+    return (
+      <Button
+        onClick={() => run(() => phone.startConference(customerPhone), "Start 3-way")}
+        disabled={!canStart || busy}
+        size="sm"
+        variant="outline"
+        className="gap-2 font-medium"
+        title={canStart ? "Start a 3-way conference call" : "Connect your microphone first"}
+      >
+        {busy ? <Loader2 size={13} className="animate-spin" /> : <Users size={13} />}
+        3-Way
+      </Button>
+    );
+  }
+
+  const roleLabel = (p: { role: string; number: string }) =>
+    p.role === "agent" ? "You"
+    : p.role === "customer" ? (customerName || p.number || "Customer")
+    : (p.number || "Target");
+
+  return (
+    <div className="w-full mt-2 rounded-xl border border-border bg-card/60 p-3 space-y-3">
+      {/* Participants */}
+      <div className="space-y-1.5">
+        {participants.map((p, i) => (
+          <div key={`${p.role}-${i}`} className="flex items-center gap-2 text-xs">
+            <span className={`w-1.5 h-1.5 rounded-full ${p.connected ? (p.onHold ? "bg-amber-500" : "bg-emerald-500") : "bg-muted-foreground/40"}`} />
+            <span className="flex-1 truncate text-foreground">{roleLabel(p)}</span>
+            <span className="text-muted-foreground">
+              {!p.connected ? "ringing…" : p.onHold ? "on hold" : "live"}
+            </span>
+            {p.connected && p.role !== "agent" && (
+              <>
+                <button
+                  onClick={() => run(() => phone.setParticipantHold(p.role as "customer" | "target", !p.onHold), "Hold")}
+                  disabled={busy}
+                  className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+                  title={p.onHold ? "Resume" : "Hold"}
+                >
+                  {p.onHold ? <Play size={12} /> : <Pause size={12} />}
+                </button>
+                <button
+                  onClick={() => run(() => phone.removeParticipant(p.role as "customer" | "target"), "Remove")}
+                  disabled={busy}
+                  className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                  title="Remove from call"
+                >
+                  <UserMinus size={12} />
+                </button>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Add a target */}
+      {!hasTarget && (
+        <div className="flex items-center gap-1.5">
+          <Input
+            value={targetNumber}
+            onChange={(e) => setTargetNumber(e.target.value)}
+            placeholder="Transfer to number…"
+            className="h-8 text-xs"
+          />
+          <label className="flex items-center gap-1 text-[10px] text-muted-foreground shrink-0" title="Warm: put customer on hold so you can brief the other person first">
+            <Checkbox checked={warm} onCheckedChange={(v) => setWarm(!!v)} className="h-3.5 w-3.5" />
+            Warm
+          </label>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy || !targetNumber.trim()}
+            onClick={() => run(async () => { await phone.addTarget(targetNumber.trim(), warm); setTargetNumber(""); }, "Add")}
+            className="h-8 gap-1 shrink-0"
+          >
+            <UserPlus size={12} /> Add
+          </Button>
+        </div>
+      )}
+
+      {/* Merge (when someone is held) */}
+      {hasTarget && anyHeld && (
+        <Button
+          size="sm"
+          disabled={busy}
+          onClick={() => run(() => phone.mergeConference(), "Merge")}
+          className="w-full h-8 gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white"
+        >
+          <PhoneForwarded size={13} /> Merge everyone
+        </Button>
+      )}
+
+      {/* Leave / End */}
+      <div className="flex items-center gap-2 pt-1 border-t border-border">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => run(() => phone.leaveConference(), "Leave")}
+          className="flex-1 h-8 gap-1.5"
+          title="Drop out — the other parties stay connected"
+        >
+          <LogOut size={12} /> Leave (keep others)
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => run(() => phone.endConference(), "End")}
+          className="flex-1 h-8 gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10"
+        >
+          <PhoneOff size={12} /> End all
+        </Button>
+      </div>
     </div>
   );
 }
@@ -3665,7 +3812,8 @@ export default function Dialer() {
               </div>
 
               {/* Call button */}
-              <div className="px-6 py-3 border-b border-border shrink-0 flex items-center gap-3">
+              <div className="px-6 py-3 border-b border-border shrink-0 flex flex-col gap-2">
+               <div className="flex items-center gap-3">
                 <Button
                   onClick={handleCall}
                   size="sm"
@@ -3698,9 +3846,24 @@ export default function Dialer() {
                     <><Phone size={13} /> Call Now</>
                   )}
                 </Button>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground flex-1">
                   {activeContact.name ? `${activeContact.name} · ` : ""}{activeContact.phone}
                 </p>
+                {!phone.conferenceToken && (
+                  <ConferencePanel
+                    phone={phone}
+                    customerPhone={activeContact.phone}
+                    customerName={activeContact.name}
+                  />
+                )}
+               </div>
+               {phone.conferenceToken && (
+                <ConferencePanel
+                  phone={phone}
+                  customerPhone={activeContact.phone}
+                  customerName={activeContact.name}
+                />
+               )}
               </div>
 
               {/* Unified conversation + Notes + Email tabs — always shown for all contacts */}
