@@ -2221,6 +2221,26 @@ export default function Dialer() {
     });
   }, []);
 
+  // Mark the PREVIOUS active contact as read when the user navigates away from it.
+  const prevActivePhoneRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prev = prevActivePhoneRef.current;
+    const cur = activeContact?.phone ?? null;
+    if (prev && prev !== cur) {
+      markRead(prev);
+    }
+    prevActivePhoneRef.current = cur;
+  }, [activeContact?.phone, markRead]);
+
+  // Also mark as read when switching away from the unread tab.
+  const prevConvTabRef = useRef(convTab);
+  useEffect(() => {
+    if (prevConvTabRef.current === "unread" && convTab !== "unread" && activeContact?.phone) {
+      markRead(activeContact.phone);
+    }
+    prevConvTabRef.current = convTab;
+  }, [convTab, activeContact?.phone, markRead]);
+
   const unreadPhones = useMemo(() => {
     const set = new Set<string>();
     for (const s of convSummaries) {
@@ -3638,7 +3658,6 @@ export default function Dialer() {
                       onClick={() => {
                         setActiveContact({ phone: contact.phone, name: contact.name || contact.phone });
                         setSelectedLeadId(null);
-                        markRead(contact.phone);
                       }}
                       className={`w-full text-left px-3 py-2.5 flex items-center gap-2.5 transition-colors hover:bg-accent/50 ${
                         activeContact?.phone === contact.phone ? "bg-accent" : ""
