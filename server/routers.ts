@@ -120,7 +120,7 @@ import {
 const TELNYX_API_KEY       = process.env.TELNYX_API_KEY ?? "";
 const TELNYX_FROM_NUMBER   = process.env.TELNYX_FROM_NUMBER ?? "+61485825732";
 const TELNYX_CONNECTION_ID = process.env.TELNYX_CONNECTION_ID ?? "";
-const TELNYX_CONFERENCE_DID = process.env.TELNYX_CONFERENCE_DID ?? "";
+const TELNYX_CONFERENCE_DID = process.env.TELNYX_CONFERENCE_DID ?? "+61485825732";
 
 // Logs the full Telnyx error payload (errors[] with code/title/detail/source)
 // to the server logs and returns an Error whose message surfaces those details
@@ -561,11 +561,7 @@ export const appRouter = router({
       start: publicProcedure
         .input(z.object({ customerNumber: z.string() }))
         .mutation(({ input }) => {
-          // Read fresh from env each call (not cached at module load time)
-          const conferenceDid = process.env.TELNYX_CONFERENCE_DID ?? "";
-          if (!conferenceDid) {
-            throw new Error("TELNYX_CONFERENCE_DID not configured");
-          }
+          const conferenceDid = process.env.TELNYX_CONFERENCE_DID ?? "+61485825732";
           const token = nanoid(12);
           createRoom(token, normalisePhone(input.customerNumber));
           return { token, conferenceDid };

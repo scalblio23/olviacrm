@@ -19,7 +19,7 @@ const TELNYX_API_KEY = process.env.TELNYX_API_KEY ?? "";
 
 // Connection (Call Control app) used to dial the customer/target PSTN legs.
 export const TELNYX_CALL_CONTROL_CONNECTION_ID =
-  process.env.TELNYX_CALL_CONTROL_CONNECTION_ID ?? "";
+  process.env.TELNYX_CALL_CONTROL_CONNECTION_ID ?? "2973810965394491167";
 
 // Caller-ID used for the outbound customer/target legs.
 const TELNYX_FROM_NUMBER = process.env.TELNYX_FROM_NUMBER ?? "+61485825732";
@@ -27,7 +27,7 @@ const TELNYX_FROM_NUMBER = process.env.TELNYX_FROM_NUMBER ?? "+61485825732";
 // The DID the agent's WebRTC client dials to "enter the room". Inbound calls to
 // this number must be routed to the same Call Control application whose webhook
 // points at /api/telnyx/voice.
-export const TELNYX_CONFERENCE_DID = process.env.TELNYX_CONFERENCE_DID ?? "";
+export const TELNYX_CONFERENCE_DID = process.env.TELNYX_CONFERENCE_DID ?? "+61485825732";
 
 /** Encode an arbitrary object as a Telnyx client_state (base64 JSON). */
 export function encodeClientState(obj: Record<string, unknown>): string {
