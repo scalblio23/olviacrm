@@ -193,6 +193,15 @@ async function startServer() {
   // ─── Telnyx Voice Webhook (Call Control — conference orchestration) ───────
   // Drives the browser-only 3-way conference. See server/conferenceState.ts for
   // the full lifecycle. We ACK immediately (200) then process asynchronously.
+  // Temporary debug endpoint — shows which conference env vars the server sees.
+  app.get("/api/debug/conference-env", (_req, res) => {
+    res.json({
+      TELNYX_CONFERENCE_DID:             process.env.TELNYX_CONFERENCE_DID ? "SET (" + process.env.TELNYX_CONFERENCE_DID + ")" : "MISSING",
+      TELNYX_CALL_CONTROL_CONNECTION_ID: process.env.TELNYX_CALL_CONTROL_CONNECTION_ID ? "SET" : "MISSING",
+      TELNYX_API_KEY:                    process.env.TELNYX_API_KEY ? "SET" : "MISSING",
+    });
+  });
+
   app.post("/api/telnyx/voice", (req, res) => {
     res.status(200).json({ received: true });
     void handleVoiceEvent(req.body as Record<string, unknown>).catch((err) => {
