@@ -637,7 +637,7 @@ function ConversationTimeline({
                       )}
                     </div>
                     <span className="text-muted-foreground/60 shrink-0">
-                      {new Date(r.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {new Date(r.startedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                     </span>
                   </div>
                 </div>
@@ -663,7 +663,7 @@ function ConversationTimeline({
                   )}
                   <p className="leading-relaxed">{msg.text}</p>
                   <p className={`text-[10px] mt-1 ${msg.direction === "outbound" ? (isIMsg ? "text-white/60" : "text-primary-foreground/60") : "text-muted-foreground"}`}>
-                    {msg.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    {msg.timestamp.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                     {msg.status === "failed" && " · Failed"}
                     {msg.status === "sending" && " · Sending…"}
                   </p>
@@ -1504,6 +1504,24 @@ export default function Dialer() {
   const [contactDateTo, setContactDateTo] = useState("");
   const [contactTagFilters, setContactTagFilters] = useState<number[]>([]);
   const [showContactFilters, setShowContactFilters] = useState(false);
+  // Call history panel resizable height
+  const [histHeight, setHistHeight] = useState(220);
+  const histDragRef = useRef<{ startY: number; startH: number } | null>(null);
+  const onHistDragStart = useCallback((e: React.MouseEvent) => {
+    histDragRef.current = { startY: e.clientY, startH: histHeight };
+    const onMove = (ev: MouseEvent) => {
+      if (!histDragRef.current) return;
+      const delta = histDragRef.current.startY - ev.clientY;
+      setHistHeight(Math.max(80, Math.min(520, histDragRef.current.startH + delta)));
+    };
+    const onUp = () => {
+      histDragRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [histHeight]);
   const [bulkTagDialogOpen, setBulkTagDialogOpen] = useState(false);
   const [bulkTagId, setBulkTagId] = useState<string>("none");
   const [bulkShowNewTag, setBulkShowNewTag] = useState(false);
@@ -3740,9 +3758,17 @@ export default function Dialer() {
             </TabsContent>
           </Tabs>
 
-          {/* Global call history */}
-          <div className="flex-1 overflow-hidden flex flex-col border-t border-border">
-            <div className="px-4 py-2 shrink-0 flex items-center gap-2">
+          {/* Global call history — resizable via drag handle */}
+          <div className="shrink-0 flex flex-col border-t border-border" style={{ height: histHeight }}>
+            {/* Drag handle */}
+            <div
+              onMouseDown={onHistDragStart}
+              className="h-4 flex items-center justify-center cursor-ns-resize shrink-0 group"
+              title="Drag to resize call history"
+            >
+              <div className="w-8 h-1 rounded-full bg-border group-hover:bg-muted-foreground/40 transition-colors" />
+            </div>
+            <div className="px-4 pb-1 shrink-0 flex items-center gap-2">
               <History size={12} className="text-muted-foreground" />
               <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Call History</span>
               {allCalls.length > 0 && (
