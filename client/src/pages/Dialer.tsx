@@ -36,6 +36,7 @@ import AutomationsPanel from "./AutomationsPanel";
 import AppointmentsPanel from "./AppointmentsPanel";
 import { PlaceholderPicker } from "@/components/PlaceholderPicker";
 import { AIChatBox } from "@/components/AIChatBox";
+import PowerDialler from "@/components/PowerDialler";
 import type { Message as AIChatMessage } from "@/components/AIChatBox";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1491,10 +1492,10 @@ export default function Dialer() {
     dealResult: "" as string,
   });
   // Left sidebar tab — persisted in localStorage
-  const [leftTab, setLeftTab] = useState<"conversations" | "contacts" | "settings" | "automations" | "appointments">(
-    () => (localStorage.getItem("loop_leftTab") as "conversations" | "contacts" | "settings" | "automations" | "appointments") || "conversations"
+  const [leftTab, setLeftTab] = useState<"conversations" | "contacts" | "settings" | "automations" | "appointments" | "power">(
+    () => (localStorage.getItem("loop_leftTab") as "conversations" | "contacts" | "settings" | "automations" | "appointments" | "power") || "conversations"
   );
-  const setLeftTabPersist = (tab: "conversations" | "contacts" | "settings" | "automations" | "appointments") => {
+  const setLeftTabPersist = (tab: "conversations" | "contacts" | "settings" | "automations" | "appointments" | "power") => {
     localStorage.setItem("loop_leftTab", tab);
     setLeftTab(tab);
   };
@@ -2354,6 +2355,15 @@ export default function Dialer() {
           >
             <CalendarDays size={18} />
             <span className="text-[8px] font-medium leading-none">Appts</span>
+          </button>
+          <button
+            onClick={() => setLeftTabPersist("power")}
+            title="Power Dialler"
+            className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all ${leftTab === "power" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-white/6 hover:text-foreground"}`}
+            style={leftTab === "power" ? {boxShadow:'0 0 14px 2px oklch(0.62 0.22 258 / 0.30)'} : {}}
+          >
+            <Phone size={18} />
+            <span className="text-[8px] font-medium leading-none">Power</span>
           </button>
         </nav>
 
@@ -3267,6 +3277,12 @@ export default function Dialer() {
         {/* ── FULL-WIDTH APPOINTMENTS PANEL ────────────────────────────── */}
         {leftTab === "appointments" && (
           <AppointmentsPanel />
+        )}
+
+        {leftTab === "power" && (
+          <div className="flex-1 overflow-hidden">
+            <PowerDialler phone={phone} />
+          </div>
         )}
 
         {/* ── ASIDE + MAIN (conversations only) ───────────────────────────── */}
