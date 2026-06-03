@@ -597,8 +597,18 @@ function ConversationTimeline({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [events]);
 
+  const applyPlaceholders = (text: string) => {
+    const firstName = contactName?.split(" ")[0] ?? "";
+    const lastName  = contactName?.split(" ").slice(1).join(" ") ?? "";
+    return text
+      .replace(/\{\{first_name\}\}/gi, firstName)
+      .replace(/\{\{last_name\}\}/gi, lastName)
+      .replace(/\{\{full_name\}\}/gi, contactName ?? "")
+      .replace(/\{\{phone\}\}/gi, contactPhone ?? "");
+  };
+
   const send = () => {
-    const t = draft.trim();
+    const t = applyPlaceholders(draft.trim());
     if (!t) return;
     onSend(t);
     setDraft("");
@@ -736,6 +746,11 @@ function ConversationTimeline({
              {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
           </Button>
         </div>
+        {draft.match(/\{\{[^}]+\}\}/) && (
+          <p className="mt-1 text-[11px] text-muted-foreground/70 px-1">
+            Preview: <span className="text-foreground/80">{applyPlaceholders(draft)}</span>
+          </p>
+        )}
         <div className="flex items-center justify-between mt-2">
           <PlaceholderPicker
             targetRef={textareaRef}
