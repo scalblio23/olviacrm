@@ -350,7 +350,8 @@ export function useTelnyxPhone(): UseTelnyxPhoneReturn {
       callerName: "Loop Dialer",
       audio: true,
       remoteElement: getAudioEl(),
-      customHeaders: [{ name: "X-Conf-Token", value: token }],
+      // clientState is base64 JSON — more reliable than custom SIP headers
+      clientState: btoa(JSON.stringify({ token, role: "agent" })),
     } as Parameters<TelnyxRTC["newCall"]>[0];
     const call = clientRef.current.newCall(opts);
     activeCallRef.current = call;

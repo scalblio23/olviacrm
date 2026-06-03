@@ -69,16 +69,22 @@ async function handleVoiceEvent(raw: Record<string, unknown>): Promise<void> {
   const state = decodeClientState(payload?.client_state);
 
   if (eventType === "call.initiated") {
-    // Only the agent's WebRTC leg carries our conference token (via custom SIP
-    // header or, after a dial-out, via client_state). Customer/target legs we
-    // initiate carry client_state and are handled on call.answered.
-    if (state?.role) return; // an outbound leg we created — wait for answered
+    // The agent's WebRTC leg now carries the token via clientState (base64 JSON
+    // with { token, role: "agent" }). Customer/target legs we initiate also carry
+    // client_state and are handled on call.answered.
+    // If state already has a role it's one of our outbound legs — wait for answered.
+    if (state?.role && state.role !== "agent") return;
 
-    const headers = (payload?.custom_headers ?? []) as Array<{ name?: string; value?: string }>;
-    const tokenHeader = headers.find((h) => (h?.name ?? "").toLowerCase() === "x-conf-token");
-    const token = tokenHeader?.value;
+    // Prefer client_state token (WebRTC clientState), fall back to custom header
+    // for backward compatibility with any in-flight calls.
+    let token = state?.token as string | undefined;
     if (!token) {
-      console.warn("[Telnyx Voice] call.initiated without X-Conf-Token — ignoring");
+      const headers = (payload?.custom_headers ?? []) as Array<{ name?: string; value?: string }>;
+      const tokenHeader = headers.find((h) => (h?.name ?? "").toLowerCase() === "x-conf-token");
+      token = tokenHeader?.value;
+    }
+    if (!token) {
+      console.warn("[Telnyx Voice] call.initiated without conf token — ignoring");
       return;
     }
     const room = getRoomByToken(token);
