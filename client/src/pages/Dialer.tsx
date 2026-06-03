@@ -4134,8 +4134,8 @@ export default function Dialer() {
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
               <Label htmlFor="c-phone">Phone <span className="text-destructive">*</span></Label>
-              {activeContact?.phone ? (
-                <Input id="c-phone" value={activeContact.phone} disabled className="font-mono text-sm" />
+              {savedContact?.phone ? (
+                <Input id="c-phone" value={savedContact.phone} disabled className="font-mono text-sm" />
               ) : (
                 <Input
                   id="c-phone"
