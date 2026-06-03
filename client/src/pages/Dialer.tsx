@@ -1927,6 +1927,11 @@ export default function Dialer() {
     refetchInterval: 15_000,
     staleTime: 10_000,
   });
+  const convSummaryQuery = trpc.contacts.getConversationSummaries.useQuery(undefined, {
+    refetchInterval: 10_000,
+    staleTime: 8_000,
+  });
+  const convSummaries = convSummaryQuery.data ?? [];
   const activePhoneSet = useMemo(() => new Set(activePhonesQuery.data ?? []), [activePhonesQuery.data]);
   // Contacts with activity — filtered by active phone set + tag filter
   const activeContacts = useMemo(() => {
@@ -2158,6 +2163,33 @@ export default function Dialer() {
     const file = e.dataTransfer.files[0];
     if (file) handleFile(file);
   }, [handleFile]);
+
+  // ─── Read tracking ────────────────────────────────────────────────────────
+
+  const [readTimes, setReadTimes] = useState<Record<string, number>>(() => {
+    try { return JSON.parse(localStorage.getItem("loop_conv_read") ?? "{}") as Record<string, number>; }
+    catch { return {}; }
+  });
+
+  const markRead = useCallback((phone: string) => {
+    setReadTimes(prev => {
+      const next = { ...prev, [phone]: Date.now() };
+      localStorage.setItem("loop_conv_read", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const unreadPhones = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of convSummaries) {
+      if (!s.lastInboundAt) continue;
+      const lastRead = readTimes[s.phone] ?? 0;
+      if (new Date(s.lastInboundAt).getTime() > lastRead) {
+        set.add(s.phone);
+      }
+    }
+    return set;
+  }, [convSummaries, readTimes]);
 
   // ─── Call ─────────────────────────────────────────────────────────────────
 
@@ -3550,35 +3582,81 @@ export default function Dialer() {
                     <p className="text-sm font-medium text-foreground">No conversations yet</p>
                     <p className="text-xs text-muted-foreground">Contacts appear here after a call or message</p>
                   </div>
-                ) : (
-                  <div className="py-1">
-                    <p className="px-3 py-1 text-[10px] text-muted-foreground/60 uppercase tracking-wider font-medium">
-                      {activeContacts.length} conversation{activeContacts.length !== 1 ? "s" : ""}
-                    </p>
-                    {activeContacts.map((contact) => (
+                ) : (() => {
+                  const summaryMap = new Map(convSummaries.map(s => [s.phone, s]));
+                  const sorted = [...activeContacts].sort((a, b) => {
+                    const aUnread = unreadPhones.has(a.phone) ? 1 : 0;
+                    const bUnread = unreadPhones.has(b.phone) ? 1 : 0;
+                    if (aUnread !== bUnread) return bUnread - aUnread;
+                    const aTime = summaryMap.get(a.phone)?.lastActivityAt;
+                    const bTime = summaryMap.get(b.phone)?.lastActivityAt;
+                    if (aTime && bTime) return new Date(bTime).getTime() - new Date(aTime).getTime();
+                    return 0;
+                  });
+                  const unread = sorted.filter(c => unreadPhones.has(c.phone));
+                  const recent = sorted.filter(c => !unreadPhones.has(c.phone));
+
+                  const renderContact = (contact: typeof activeContacts[0]) => {
+                    const summary = summaryMap.get(contact.phone);
+                    const isUnread = unreadPhones.has(contact.phone);
+                    return (
                       <button
                         key={contact.id}
                         onClick={() => {
                           setActiveContact({ phone: contact.phone, name: contact.name || contact.phone });
                           setSelectedLeadId(null);
+                          markRead(contact.phone);
                         }}
                         className={`w-full text-left px-3 py-2.5 flex items-center gap-2.5 transition-colors hover:bg-accent/50 ${
                           activeContact?.phone === contact.phone ? "bg-accent" : ""
                         }`}
                       >
-                        <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                          <span className="text-[11px] font-semibold text-primary">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${isUnread ? "bg-blue-500/20" : "bg-primary/10"}`}>
+                          <span className={`text-[11px] font-semibold ${isUnread ? "text-blue-500" : "text-primary"}`}>
                             {(contact.name || contact.phone).charAt(0).toUpperCase()}
                           </span>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">{contact.name || contact.phone}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className={`text-sm truncate ${isUnread ? "font-semibold text-foreground" : "font-medium text-foreground"}`}>
+                              {contact.name || contact.phone}
+                            </p>
+                            {isUnread && (
+                              <span className="shrink-0 w-2 h-2 rounded-full bg-blue-500" />
+                            )}
+                          </div>
                           {contact.name && <p className="text-[11px] text-muted-foreground truncate">{contact.phone}</p>}
+                          {isUnread && summary?.lastInboundPreview && (
+                            <p className="text-[11px] text-blue-400 truncate mt-0.5">{summary.lastInboundPreview}</p>
+                          )}
                         </div>
                       </button>
-                    ))}
-                  </div>
-                )}
+                    );
+                  };
+
+                  return (
+                    <div className="py-1">
+                      {unread.length > 0 && (
+                        <>
+                          <p className="px-3 py-1 text-[10px] text-blue-500 uppercase tracking-wider font-semibold flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" />
+                            Unread · {unread.length}
+                          </p>
+                          {unread.map(renderContact)}
+                          {recent.length > 0 && <div className="mx-3 my-1 border-t border-border" />}
+                        </>
+                      )}
+                      {recent.length > 0 && (
+                        <>
+                          <p className="px-3 py-1 text-[10px] text-muted-foreground/60 uppercase tracking-wider font-medium">
+                            {unread.length > 0 ? `Recent · ${recent.length}` : `${sorted.length} conversation${sorted.length !== 1 ? "s" : ""}`}
+                          </p>
+                          {recent.map(renderContact)}
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </TabsContent>
 

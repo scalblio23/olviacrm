@@ -1158,3 +1158,75 @@ export async function dismissUpdatesForUser(userId: number, updateIds: number[])
   const values = updateIds.map(updateId => ({ userId, updateId }));
   await db.insert(updateDismissals).values(values).onDuplicateKeyUpdate({ set: { userId } });
 }
+
+// ─── Conversation summaries ────────────────────────────────────────────────────
+
+export interface ConversationSummary {
+  phone: string;
+  lastActivityAt: Date;
+  lastInboundAt: Date | null;
+  lastInboundPreview: string | null;
+  lastInboundType: "sms" | "call" | null;
+}
+
+export async function getConversationSummaries(): Promise<ConversationSummary[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const smsRows = await db
+    .select({
+      phone: smsMessages.phone,
+      direction: smsMessages.direction,
+      body: smsMessages.body,
+      createdAt: smsMessages.createdAt,
+    })
+    .from(smsMessages)
+    .orderBy(desc(smsMessages.createdAt));
+
+  const callRows = await db
+    .select({
+      phone: callHistory.phone,
+      direction: callHistory.direction,
+      disposition: callHistory.disposition,
+      startedAt: callHistory.startedAt,
+    })
+    .from(callHistory)
+    .orderBy(desc(callHistory.startedAt));
+
+  const map = new Map<string, ConversationSummary>();
+
+  const touch = (phone: string, activityAt: Date) => {
+    if (!map.has(phone)) {
+      map.set(phone, { phone, lastActivityAt: activityAt, lastInboundAt: null, lastInboundPreview: null, lastInboundType: null });
+    } else {
+      const s = map.get(phone)!;
+      if (activityAt > s.lastActivityAt) s.lastActivityAt = activityAt;
+    }
+  };
+
+  for (const row of smsRows) {
+    touch(row.phone, row.createdAt);
+    if (row.direction === "inbound") {
+      const s = map.get(row.phone)!;
+      if (!s.lastInboundAt || row.createdAt > s.lastInboundAt) {
+        s.lastInboundAt = row.createdAt;
+        s.lastInboundPreview = row.body.slice(0, 80);
+        s.lastInboundType = "sms";
+      }
+    }
+  }
+
+  for (const row of callRows) {
+    touch(row.phone, row.startedAt);
+    if (row.direction === "inbound") {
+      const s = map.get(row.phone)!;
+      if (!s.lastInboundAt || row.startedAt > s.lastInboundAt) {
+        s.lastInboundAt = row.startedAt;
+        s.lastInboundPreview = row.disposition === "none" ? "Missed call" : "Inbound call";
+        s.lastInboundType = "call";
+      }
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.lastActivityAt.getTime() - a.lastActivityAt.getTime());
+}

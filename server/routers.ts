@@ -113,6 +113,7 @@ import {
   updateUpdate,
   deleteUpdate,
   dismissUpdatesForUser,
+  getConversationSummaries,
 } from "./db";
 
 // ─── Telnyx helpers ──────────────────────────────────────────────────────────
@@ -771,6 +772,10 @@ export const appRouter = router({
     getActivePhones: publicProcedure
       .query(async () => {
         return getActiveContactPhones();
+      }),
+    getConversationSummaries: publicProcedure
+      .query(async () => {
+        return getConversationSummaries();
       }),
     bulkDelete: publicProcedure
       .input(z.object({ ids: z.array(z.number()).min(1) }))
