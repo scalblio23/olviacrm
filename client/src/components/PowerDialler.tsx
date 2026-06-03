@@ -117,25 +117,11 @@ function MiniConferencePanel({
 
   if (!inConference) {
     const inCall = ["connecting", "ringing", "active", "reconnecting"].includes(phone.phoneState);
-    const canStart = inCall || phone.phoneState === "ready";
-    const label = inCall ? "Add 3rd" : "3-Way";
+    if (!inCall) return null;
     return (
-      <Button
-        onClick={() => run(async () => {
-          if (inCall) {
-            phone.hangup();
-            await new Promise((r) => setTimeout(r, 2100));
-          }
-          await phone.startConference(customerPhone);
-        }, "Start 3-way")}
-        disabled={!canStart || busy}
-        size="sm"
-        variant="outline"
-        className="gap-1.5 h-8 text-xs"
-      >
-        {busy ? <Loader2 size={12} className="animate-spin" /> : <Users size={12} />}
-        {label}
-      </Button>
+      <span className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+        <Loader2 size={11} className="animate-spin" /> Setting up…
+      </span>
     );
   }
 
@@ -244,7 +230,10 @@ export default function PowerDialler({ phone }: { phone: UseTelnyxPhoneReturn })
     }
     setCurrentLead(lead);
     setQueue((q) => q.filter((l) => l.id !== lead.id));
-    phone.dial(lead.phone);
+    // Use startConference so 3-way is always available without re-dialling.
+    phone.startConference(lead.phone).catch((e: unknown) => {
+      toast.error(`Dial failed: ${e instanceof Error ? e.message : "error"}`);
+    });
   }, [phone]);
 
   const start = useCallback(() => {

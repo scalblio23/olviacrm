@@ -365,33 +365,18 @@ function ConferencePanel({
     finally { setBusy(false); }
   }, []);
 
-  // Not yet in a conference — offer to start one with the current contact.
+  // Not yet in a conference (call started but conference token not assigned yet — transient)
+  // or phone is idle. Show a minimal placeholder.
   if (!inConference) {
-    // Allow starting a 3-way from any call state OR from ready.
-    // If already on a direct call we hang it up and re-enter via conference.
+    // Conference starts with the call itself now, so this state is brief/transient.
+    // Only show anything if phone is truly idle (no call active).
     const inCall = ["connecting", "ringing", "active", "reconnecting"].includes(phone.phoneState);
-    const canStart = phone.phoneState === "ready" || inCall;
-    const label = inCall ? "Add 3rd person" : "3-Way";
+    if (!inCall) return null;
+    // Call is connecting but conference token not set yet — show a waiting indicator.
     return (
-      <Button
-        onClick={() => run(async () => {
-          if (inCall) {
-            // End the direct call first, then open the conference to the same number
-            phone.hangup();
-            // Wait for SDK to fully tear down (1500ms ended→ready timer + margin)
-            await new Promise((r) => setTimeout(r, 2100));
-          }
-          await phone.startConference(customerPhone);
-        }, "Start 3-way")}
-        disabled={!canStart || busy}
-        size="sm"
-        variant="outline"
-        className="gap-2 font-medium"
-        title={canStart ? "Add a third person to this call" : "Connect your microphone first"}
-      >
-        {busy ? <Loader2 size={13} className="animate-spin" /> : <Users size={13} />}
-        {label}
-      </Button>
+      <span className="text-xs text-muted-foreground flex items-center gap-1">
+        <Loader2 size={12} className="animate-spin" /> Setting up 3-way…
+      </span>
     );
   }
 
@@ -2177,9 +2162,16 @@ export default function Dialer() {
   const handleCall = () => {
     if (!activeContact) { toast.error("Select a contact first"); return; }
     const isActive = ["connecting", "ringing", "active", "reconnecting"].includes(phone.phoneState);
-    if (isActive) { phone.hangup(); return; }
+    if (isActive) {
+      if (phone.conferenceToken) { phone.endConference().catch(() => {}); }
+      else { phone.hangup(); }
+      return;
+    }
     if (phone.phoneState !== "ready") { toast.error("Connect your microphone first"); return; }
-    phone.dial(activeContact.phone);
+    // Every call starts as a conference so 3-way is always available without re-dialling.
+    phone.startConference(activeContact.phone).catch((e: unknown) => {
+      toast.error(`Call failed: ${e instanceof Error ? e.message : "error"}`);
+    });
     toast.success(`Calling ${activeContact.name || activeContact.phone}…`);
   };
 
