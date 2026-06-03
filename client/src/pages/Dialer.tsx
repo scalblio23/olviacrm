@@ -367,17 +367,18 @@ function ConferencePanel({
 
   // Not yet in a conference — offer to start one with the current contact.
   if (!inConference) {
-    // Allow starting a 3-way from an active 1:1 call OR from ready state.
+    // Allow starting a 3-way from any call state OR from ready.
     // If already on a direct call we hang it up and re-enter via conference.
-    const canStart = phone.phoneState === "ready" || phone.phoneState === "active";
-    const label = phone.phoneState === "active" ? "Add 3rd person" : "3-Way";
+    const inCall = ["connecting", "ringing", "active", "reconnecting"].includes(phone.phoneState);
+    const canStart = phone.phoneState === "ready" || inCall;
+    const label = inCall ? "Add 3rd person" : "3-Way";
     return (
       <Button
         onClick={() => run(async () => {
-          if (phone.phoneState === "active") {
+          if (inCall) {
             // End the direct call first, then open the conference to the same number
             phone.hangup();
-            // Brief pause for the call to clear before starting conference
+            // Wait for SDK to fully tear down (1500ms ended→ready timer + margin)
             await new Promise((r) => setTimeout(r, 2100));
           }
           await phone.startConference(customerPhone);

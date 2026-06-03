@@ -335,7 +335,7 @@ export function useTelnyxPhone(): UseTelnyxPhoneReturn {
   /** Start a 3-way: place the agent's WebRTC leg into a server conference room,
    *  then the server dials the customer into the same room. */
   const startConference = useCallback(async (customerNumber: string) => {
-    if (!clientRef.current || (phoneState !== "ready" && phoneState !== "ended")) {
+    if (!clientRef.current) {
       throw new Error("Phone not ready — connect your microphone first");
     }
     const { token, conferenceDid } = await confStartMutation.mutateAsync({ customerNumber });
