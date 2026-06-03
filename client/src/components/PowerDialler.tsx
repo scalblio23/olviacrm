@@ -116,12 +116,13 @@ function MiniConferencePanel({
   }, []);
 
   if (!inConference) {
-    const canStart = phone.phoneState === "active" || phone.phoneState === "ready";
-    const label = phone.phoneState === "active" ? "Add 3rd" : "3-Way";
+    const inCall = ["connecting", "ringing", "active", "reconnecting"].includes(phone.phoneState);
+    const canStart = inCall || phone.phoneState === "ready";
+    const label = inCall ? "Add 3rd" : "3-Way";
     return (
       <Button
         onClick={() => run(async () => {
-          if (phone.phoneState === "active") {
+          if (inCall) {
             phone.hangup();
             await new Promise((r) => setTimeout(r, 2100));
           }
