@@ -195,8 +195,11 @@ function relativeDay(date: Date | string): string {
   const diff = Math.round((today.getTime() - day.getTime()) / 86400000);
   if (diff === 0) return "Today";
   if (diff === 1) return "Yesterday";
-  if (diff < 7) return `${diff} days ago`;
-  return d2.toLocaleDateString([], { month: "short", day: "numeric" });
+  if (diff < 30) return `${diff} days ago`;
+  const months = Math.floor(diff / 30);
+  if (months < 12) return months === 1 ? "1 month ago" : `${months} months ago`;
+  const years = Math.floor(diff / 365);
+  return years === 1 ? "1 year ago" : `${years} years ago`;
 }
 
 function useCallTimer(active: boolean): number {
