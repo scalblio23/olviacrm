@@ -378,7 +378,7 @@ function ConferencePanel({
             // End the direct call first, then open the conference to the same number
             phone.hangup();
             // Brief pause for the call to clear before starting conference
-            await new Promise((r) => setTimeout(r, 1200));
+            await new Promise((r) => setTimeout(r, 2100));
           }
           await phone.startConference(customerPhone);
         }, "Start 3-way")}

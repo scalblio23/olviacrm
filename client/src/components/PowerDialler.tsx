@@ -123,7 +123,7 @@ function MiniConferencePanel({
         onClick={() => run(async () => {
           if (phone.phoneState === "active") {
             phone.hangup();
-            await new Promise((r) => setTimeout(r, 1200));
+            await new Promise((r) => setTimeout(r, 2100));
           }
           await phone.startConference(customerPhone);
         }, "Start 3-way")}
