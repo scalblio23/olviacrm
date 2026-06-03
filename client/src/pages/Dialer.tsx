@@ -569,6 +569,92 @@ function GlobalCallRow({
   );
 }
 
+// ─── Contact Details Panel (inline edit in Details tab) ──────────────────────
+
+function ContactDetailsPanel({
+  savedContact, activeContactPhone, activeContactName, allTags, onSave, saving,
+}: {
+  savedContact: { id: number; name: string; phone: string; email?: string | null; company?: string | null; tags?: { id: number; name: string; color: string }[] } | null | undefined;
+  activeContactPhone: string;
+  activeContactName: string;
+  allTags: { id: number; name: string; color: string }[];
+  onSave: (data: { phone: string; name: string; email?: string; company?: string; tagIds: number[] }) => void;
+  saving: boolean;
+}) {
+  const [df, setDf] = useState({
+    name:    "",
+    email:   "",
+    phone:   "",
+    company: "",
+    tagIds:  [] as number[],
+  });
+
+  useEffect(() => {
+    setDf({
+      name:    savedContact?.name    ?? activeContactName ?? "",
+      email:   savedContact?.email   ?? "",
+      phone:   savedContact?.phone   ?? activeContactPhone ?? "",
+      company: savedContact?.company ?? "",
+      tagIds:  savedContact?.tags?.map(t => t.id) ?? [],
+    });
+  }, [savedContact?.id, activeContactPhone]);
+
+  return (
+    <div className="space-y-4 max-w-sm">
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Name</label>
+        <Input value={df.name} onChange={e => setDf(f => ({ ...f, name: e.target.value }))} placeholder="Full name" className="h-9" />
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Phone</label>
+        <Input value={df.phone} onChange={e => setDf(f => ({ ...f, phone: e.target.value }))} placeholder="+61400000000" className="h-9 font-mono" />
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Email</label>
+        <Input type="email" value={df.email} onChange={e => setDf(f => ({ ...f, email: e.target.value }))} placeholder="email@example.com" className="h-9" />
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Company</label>
+        <Input value={df.company} onChange={e => setDf(f => ({ ...f, company: e.target.value }))} placeholder="Company name" className="h-9" />
+      </div>
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tags</label>
+        <div className="flex flex-wrap gap-1.5">
+          {allTags.map(tag => {
+            const on = df.tagIds.includes(tag.id);
+            return (
+              <button
+                key={tag.id}
+                type="button"
+                onClick={() => setDf(f => ({
+                  ...f,
+                  tagIds: on ? f.tagIds.filter(id => id !== tag.id) : [...f.tagIds, tag.id],
+                }))}
+                className="text-[11px] px-2.5 py-1 rounded-full border font-medium transition-all"
+                style={on
+                  ? { backgroundColor: tag.color + "33", borderColor: tag.color + "88", color: tag.color }
+                  : { backgroundColor: "transparent", borderColor: "var(--border)", color: "var(--muted-foreground)" }}
+              >
+                {tag.name}
+              </button>
+            );
+          })}
+          {allTags.length === 0 && <p className="text-xs text-muted-foreground/60">No tags yet — create them in Settings</p>}
+        </div>
+      </div>
+      <Button
+        size="sm"
+        className="w-full gap-2"
+        onClick={() => onSave({ phone: df.phone.trim(), name: df.name.trim(), email: df.email.trim() || undefined, company: df.company.trim() || undefined, tagIds: df.tagIds })}
+        disabled={saving || !df.name.trim()}
+      >
+        {saving ? <Loader2 size={13} className="animate-spin" /> : <UserCheck size={13} />}
+        Save Details
+      </Button>
+    </div>
+  );
+}
+
 // ─── Unified Conversation Timeline ───────────────────────────────────────────
 
 function ConversationTimeline({
@@ -4105,6 +4191,9 @@ export default function Dialer() {
                       <TabsTrigger value="email" className="text-xs gap-1 data-[state=active]:bg-background data-[state=active]:text-foreground">
                         <Mail size={12} /> Email
                       </TabsTrigger>
+                      <TabsTrigger value="details" className="text-xs gap-1 data-[state=active]:bg-background data-[state=active]:text-foreground">
+                        <UserCheck size={12} /> Details
+                      </TabsTrigger>
                     </TabsList>
                   </div>
                   <TabsContent value="conversation" className="flex-1 overflow-hidden mt-0 p-0">
@@ -4223,6 +4312,17 @@ export default function Dialer() {
                         Send Email
                       </Button>
                     </div>
+                  </TabsContent>
+                  {/* ── Details tab ── */}
+                  <TabsContent value="details" className="flex-1 overflow-auto mt-0 px-6 py-4">
+                    <ContactDetailsPanel
+                      savedContact={savedContact}
+                      activeContactPhone={activeContact.phone}
+                      activeContactName={activeContact.name}
+                      allTags={allTags}
+                      onSave={(data) => upsertContactMutation.mutate(data)}
+                      saving={upsertContactMutation.isPending}
+                    />
                   </TabsContent>
                 </Tabs>
               </div>
