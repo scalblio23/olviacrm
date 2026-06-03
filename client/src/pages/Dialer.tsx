@@ -616,7 +616,7 @@ function ContactDetailsPanel({
   return (
     <div className="space-y-4 max-w-sm">
       {/* Status */}
-      {savedContact && onStatusChange && (
+      {onStatusChange && (
         <div className="space-y-2">
           <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Status</label>
           <div className="flex flex-wrap gap-1.5">
