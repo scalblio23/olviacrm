@@ -582,14 +582,15 @@ function GlobalCallRow({
 // ─── Contact Details Panel (inline edit in Details tab) ──────────────────────
 
 function ContactDetailsPanel({
-  savedContact, activeContactPhone, activeContactName, allTags, onSave, saving,
+  savedContact, activeContactPhone, activeContactName, allTags, onSave, saving, onStatusChange,
 }: {
-  savedContact: { id: number; name: string; phone: string; email?: string | null; company?: string | null; tags?: { id: number; name: string; color: string }[] } | null | undefined;
+  savedContact: { id: number; name: string; phone: string; email?: string | null; company?: string | null; status?: string | null; tags?: { id: number; name: string; color: string }[] } | null | undefined;
   activeContactPhone: string;
   activeContactName: string;
   allTags: { id: number; name: string; color: string }[];
   onSave: (data: { phone: string; name: string; email?: string; company?: string; tagIds: number[] }) => void;
   saving: boolean;
+  onStatusChange?: (status: string | null) => void;
 }) {
   const [df, setDf] = useState({
     name:    "",
@@ -609,8 +610,40 @@ function ContactDetailsPanel({
     });
   }, [savedContact?.id, activeContactPhone]);
 
+  const currentStatus = savedContact?.status ?? null;
+  const statusMeta = getStatusMeta(currentStatus);
+
   return (
     <div className="space-y-4 max-w-sm">
+      {/* Status */}
+      {savedContact && onStatusChange && (
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Status</label>
+          <div className="flex flex-wrap gap-1.5">
+            {CONTACT_STATUSES.map(s => {
+              const active = currentStatus === s.value;
+              return (
+                <button
+                  key={s.value}
+                  type="button"
+                  onClick={() => onStatusChange(active ? null : s.value)}
+                  className="text-[11px] px-2.5 py-1 rounded-full border font-medium transition-all"
+                  style={active
+                    ? { backgroundColor: s.bg, borderColor: s.bg, color: s.color }
+                    : { backgroundColor: "transparent", borderColor: "var(--border)", color: "var(--muted-foreground)" }}
+                >
+                  {s.label}
+                </button>
+              );
+            })}
+          </div>
+          {statusMeta && (
+            <p className="text-[11px] text-muted-foreground/70">
+              Current: <span className="font-medium" style={{ color: statusMeta.bg }}>{statusMeta.label}</span>
+            </p>
+          )}
+        </div>
+      )}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Name</label>
         <Input value={df.name} onChange={e => setDf(f => ({ ...f, name: e.target.value }))} placeholder="Full name" className="h-9" />
@@ -1954,7 +1987,7 @@ export default function Dialer() {
     onError: (e) => toast.error(e.message),
   });
   const setStatusMutation = trpc.contacts.setStatus.useMutation({
-    onSuccess: () => void refetchContacts(),
+    onSuccess: () => { void refetchContacts(); void refetchSavedContact(); },
     onError: (e) => toast.error(e.message),
   });
   const bulkSetStatusMutation = trpc.contacts.bulkSetStatus.useMutation({
@@ -4341,6 +4374,9 @@ export default function Dialer() {
                       allTags={allTags}
                       onSave={(data) => upsertContactMutation.mutate(data)}
                       saving={upsertContactMutation.isPending}
+                      onStatusChange={(status) => {
+                        if (savedContact?.id) setStatusMutation.mutate({ contactId: savedContact.id, status });
+                      }}
                     />
                   </TabsContent>
                 </Tabs>
