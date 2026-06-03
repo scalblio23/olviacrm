@@ -3662,6 +3662,19 @@ export default function Dialer() {
                             {summary.lastInboundPreview}
                           </p>
                         )}
+                        {(contact as { tags?: { id: number; name: string; color: string }[] }).tags?.length ? (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {(contact as { tags?: { id: number; name: string; color: string }[] }).tags!.slice(0, 3).map(tag => (
+                              <span
+                                key={tag.id}
+                                className="text-[9px] px-1.5 py-0.5 rounded-full font-medium"
+                                style={{ backgroundColor: tag.color + "33", color: tag.color + "b3", border: `1px solid ${tag.color}4d` }}
+                              >
+                                {tag.name}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                       {lastTime && (
                         <p className="text-[9px] text-muted-foreground/50 shrink-0">{relativeDay(lastTime)}</p>
