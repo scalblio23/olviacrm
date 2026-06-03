@@ -301,18 +301,28 @@ function autoDetectField(header: string): ContactFieldKey {
 // ─── Phone Status Pill ────────────────────────────────────────────────────────
 
 function PhoneStatusPill({
-  phoneState, isMuted, error, callElapsed, onInit, onHangup, onToggleMute,
+  phoneState, isMuted, error, callElapsed, onInit, onHangup, onToggleMute, onDismiss,
 }: {
   phoneState: string; isMuted: boolean; error: string | null;
   callElapsed: number;
   onInit: () => void; onHangup: () => void; onToggleMute: () => void;
+  onDismiss?: () => void;
 }) {
   if (phoneState === "idle") {
     return (
-      <button onClick={onInit}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/5 text-xs text-primary hover:bg-primary/10 transition-all">
-        <Mic size={12} /> Connect Mic
-      </button>
+      <div className="flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/5 overflow-hidden">
+        <button onClick={onInit}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-primary hover:bg-primary/10 transition-all">
+          <Mic size={12} /> Connect Mic
+        </button>
+        {onDismiss && (
+          <button onClick={onDismiss}
+            className="px-1.5 py-1.5 text-primary/60 hover:text-primary hover:bg-primary/10 transition-all"
+            title="Dismiss">
+            <X size={11} />
+          </button>
+        )}
+      </div>
     );
   }
   if (phoneState === "initializing") {
@@ -1629,6 +1639,7 @@ export default function Dialer() {
   const [showContactFilters, setShowContactFilters] = useState(false);
   // Conversations inner tab: "unread" | "sms"
   const [convTab, setConvTab] = useState<"unread" | "sms">("unread");
+  const [micPillDismissed, setMicPillDismissed] = useState(false);
   // Call history panel resizable height
   const [histHeight, setHistHeight] = useState(220);
   const histDragRef = useRef<{ startY: number; startH: number } | null>(null);
@@ -2187,6 +2198,11 @@ export default function Dialer() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phone.phoneState]);
 
+  // Reset mic pill dismissed state when phone becomes active again
+  useEffect(() => {
+    if (phone.phoneState !== "idle") setMicPillDismissed(false);
+  }, [phone.phoneState]);
+
   // ─── Activate a CSV lead ──────────────────────────────────────────────────
 
   const handleSelectLead = (lead: Lead) => {
@@ -2484,15 +2500,18 @@ export default function Dialer() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <PhoneStatusPill
-            phoneState={phone.phoneState}
-            isMuted={phone.isMuted}
-            error={phone.error}
-            callElapsed={callElapsed}
-            onInit={phone.initialize}
-            onHangup={phone.hangup}
-            onToggleMute={phone.toggleMute}
-          />
+          {(!micPillDismissed || phone.phoneState !== "idle") && (
+            <PhoneStatusPill
+              phoneState={phone.phoneState}
+              isMuted={phone.isMuted}
+              error={phone.error}
+              callElapsed={callElapsed}
+              onInit={() => { setMicPillDismissed(false); phone.initialize(); }}
+              onHangup={phone.hangup}
+              onToggleMute={phone.toggleMute}
+              onDismiss={phone.phoneState === "idle" ? () => setMicPillDismissed(true) : undefined}
+            />
+          )}
           <WhatsNewMenu />
           <Button variant="outline" size="icon" onClick={toggleTheme}
             className="w-8 h-8 border-border text-muted-foreground hover:text-foreground"
