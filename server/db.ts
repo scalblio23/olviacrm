@@ -235,11 +235,24 @@ export async function getCallHistoryByLead(leadId: number): Promise<CallHistoryR
 export async function getAllCallHistory(limit = 200): Promise<CallHistoryRecord[]> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  return db
-    .select()
+  const rows = await db
+    .select({
+      id:              callHistory.id,
+      leadId:          callHistory.leadId,
+      sessionId:       callHistory.sessionId,
+      phone:           callHistory.phone,
+      direction:       callHistory.direction,
+      durationSeconds: callHistory.durationSeconds,
+      disposition:     callHistory.disposition,
+      startedAt:       callHistory.startedAt,
+      createdAt:       callHistory.createdAt,
+      contactName:     contacts.name,
+    })
     .from(callHistory)
+    .leftJoin(contacts, eq(contacts.phone, callHistory.phone))
     .orderBy(desc(callHistory.startedAt))
     .limit(limit);
+  return rows as unknown as CallHistoryRecord[];
 }
 
 // ─── SMS Message helpers ──────────────────────────────────────────────────────
