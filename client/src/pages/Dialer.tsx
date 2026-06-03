@@ -1931,13 +1931,15 @@ export default function Dialer() {
   // Contacts with activity — filtered by active phone set + tag filter
   const activeContacts = useMemo(() => {
     let list = contactList.filter(c => activePhoneSet.has(c.phone));
-    if (contactTagFilters.length > 0) {
-      // We filter by tag using the contactList which has tags embedded via the list query
-      // Since tags are separate, we rely on the shared contactTagFilters to filter the Contacts table
-      // For conversations, just show all active contacts (tag filter applies in Contacts table)
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(c =>
+        (c.name || "").toLowerCase().includes(q) ||
+        (c.phone || "").toLowerCase().includes(q)
+      );
     }
     return list;
-  }, [contactList, activePhoneSet, contactTagFilters]);
+  }, [contactList, activePhoneSet, search]);
   // Global call history for left panel
   const allCallHistoryQuery = trpc.leads.getAllCallHistory.useQuery(undefined, {
     refetchInterval: 15_000,
