@@ -561,12 +561,14 @@ export const appRouter = router({
       start: publicProcedure
         .input(z.object({ customerNumber: z.string() }))
         .mutation(({ input }) => {
-          if (!TELNYX_CONFERENCE_DID) {
+          // Read fresh from env each call (not cached at module load time)
+          const conferenceDid = process.env.TELNYX_CONFERENCE_DID ?? "";
+          if (!conferenceDid) {
             throw new Error("TELNYX_CONFERENCE_DID not configured");
           }
           const token = nanoid(12);
           createRoom(token, normalisePhone(input.customerNumber));
-          return { token, conferenceDid: TELNYX_CONFERENCE_DID };
+          return { token, conferenceDid };
         }),
 
       // Add a transfer target. For a warm transfer (default) the customer is put
