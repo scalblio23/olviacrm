@@ -3946,7 +3946,7 @@ export default function Dialer() {
                         if (phone.phoneState !== "ready") { toast.error("Connect your microphone first"); return; }
                         const contact: ActiveContact = { phone: full, name: manualName.trim() };
                         setActiveContact(contact); setSelectedLeadId(null);
-                        phone.dial(full);
+                        phone.startConference(full).catch((e: unknown) => toast.error(`Call failed: ${e instanceof Error ? e.message : "error"}`));
                         toast.success(`Calling ${manualName.trim() || full}…`);
                       }
                     }}
@@ -3973,7 +3973,7 @@ export default function Dialer() {
                   if (phone.phoneState !== "ready") { toast.error("Connect your microphone first"); return; }
                   const contact: ActiveContact = { phone: full, name: manualName.trim() };
                   setActiveContact(contact); setSelectedLeadId(null);
-                  phone.dial(full);
+                  phone.startConference(full).catch((e: unknown) => toast.error(`Call failed: ${e instanceof Error ? e.message : "error"}`));
                   toast.success(`Calling ${manualName.trim() || full}…`);
                 }}
                 className={`w-full gap-2 font-medium ${
