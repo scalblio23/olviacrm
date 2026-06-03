@@ -116,16 +116,24 @@ function MiniConferencePanel({
   }, []);
 
   if (!inConference) {
+    const canStart = phone.phoneState === "active" || phone.phoneState === "ready";
+    const label = phone.phoneState === "active" ? "Add 3rd" : "3-Way";
     return (
       <Button
-        onClick={() => run(() => phone.startConference(customerPhone), "Start 3-way")}
-        disabled={phone.phoneState !== "active" && phone.phoneState !== "ready" || busy}
+        onClick={() => run(async () => {
+          if (phone.phoneState === "active") {
+            phone.hangup();
+            await new Promise((r) => setTimeout(r, 1200));
+          }
+          await phone.startConference(customerPhone);
+        }, "Start 3-way")}
+        disabled={!canStart || busy}
         size="sm"
         variant="outline"
         className="gap-1.5 h-8 text-xs"
       >
         {busy ? <Loader2 size={12} className="animate-spin" /> : <Users size={12} />}
-        3-Way
+        {label}
       </Button>
     );
   }
