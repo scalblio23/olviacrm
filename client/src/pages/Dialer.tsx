@@ -650,10 +650,10 @@ function ConversationTimeline({
                       )}
                     </div>
                     <span className="text-right shrink-0">
-                      <span className="block text-muted-foreground/60 text-[10px]">
+                      <span className="block text-muted-foreground text-[10px]">
                         {new Date(r.startedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                       </span>
-                      <span className="block text-muted-foreground/40 text-[9px]">{relativeDay(new Date(r.startedAt))}</span>
+                      <span className="block text-muted-foreground/70 text-[10px]">{relativeDay(new Date(r.startedAt))}</span>
                     </span>
                   </div>
                 </div>
@@ -679,9 +679,12 @@ function ConversationTimeline({
                   )}
                   <p className="leading-relaxed">{msg.text}</p>
                   <p className={`text-[10px] mt-1 ${msg.direction === "outbound" ? (isIMsg ? "text-white/60" : "text-primary-foreground/60") : "text-muted-foreground"}`}>
-                    {msg.timestamp.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} · {relativeDay(msg.timestamp)}
+                    {msg.timestamp.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                     {msg.status === "failed" && " · Failed"}
                     {msg.status === "sending" && " · Sending…"}
+                  </p>
+                  <p className={`text-[10px] ${msg.direction === "outbound" ? (isIMsg ? "text-white/50" : "text-primary-foreground/50") : "text-muted-foreground/70"}`}>
+                    {relativeDay(msg.timestamp)}
                   </p>
                 </div>
               </div>
