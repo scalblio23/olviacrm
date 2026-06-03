@@ -12,6 +12,22 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { createHeartbeatJob } from "./_core/heartbeat";
+import {
+  createRoom,
+  getRoomByToken,
+  addTargetSlot,
+  setHold,
+  deleteRoom,
+  roomSnapshot,
+} from "./conferenceState";
+import {
+  dialOut,
+  holdParticipants,
+  unholdParticipants,
+  hangupCall,
+  leaveConference,
+  encodeClientState,
+} from "./telnyxVoice";
 import { sendEmail, buildInviteEmailHtml, buildFollowUp1Html, buildReminderHtml } from "./mailgun";
 import {
   createLeadSession,
@@ -104,6 +120,7 @@ import {
 const TELNYX_API_KEY       = process.env.TELNYX_API_KEY ?? "";
 const TELNYX_FROM_NUMBER   = process.env.TELNYX_FROM_NUMBER ?? "+61485825732";
 const TELNYX_CONNECTION_ID = process.env.TELNYX_CONNECTION_ID ?? "";
+const TELNYX_CONFERENCE_DID = process.env.TELNYX_CONFERENCE_DID ?? "";
 
 // Logs the full Telnyx error payload (errors[] with code/title/detail/source)
 // to the server logs and returns an Error whose message surfaces those details
@@ -535,6 +552,138 @@ export const appRouter = router({
         });
         return result;
       }),
+
+    // ─── 3-way conference (browser-only) ───────────────────────────────────
+    // See server/conferenceState.ts and server/telnyxVoice.ts for the flow.
+    conference: router({
+      // Step 1: register a room + the customer to dial. Returns a token + the DID
+      // the browser should dial (with header X-Conf-Token: <token>) to enter it.
+      start: publicProcedure
+        .input(z.object({ customerNumber: z.string() }))
+        .mutation(({ input }) => {
+          if (!TELNYX_CONFERENCE_DID) {
+            throw new Error("TELNYX_CONFERENCE_DID not configured");
+          }
+          const token = nanoid(12);
+          createRoom(token, normalisePhone(input.customerNumber));
+          return { token, conferenceDid: TELNYX_CONFERENCE_DID };
+        }),
+
+      // Add a transfer target. For a warm transfer (default) the customer is put
+      // on hold so the agent + target can talk privately before merging.
+      addTarget: publicProcedure
+        .input(z.object({
+          token: z.string(),
+          targetNumber: z.string(),
+          warm: z.boolean().default(true),
+        }))
+        .mutation(async ({ input }) => {
+          const room = getRoomByToken(input.token);
+          if (!room?.conferenceId) throw new Error("Conference not active");
+          const number = normalisePhone(input.targetNumber);
+          addTargetSlot(input.token, number);
+
+          if (input.warm) {
+            const customer = room.participants.find(
+              (p) => p.role === "customer" && p.callControlId,
+            );
+            if (customer?.callControlId) {
+              await holdParticipants(room.conferenceId, [customer.callControlId]);
+              setHold(customer.callControlId, true);
+            }
+          }
+
+          await dialOut(
+            number,
+            encodeClientState({ token: input.token, role: "target", number }),
+          );
+          return roomSnapshot(input.token);
+        }),
+
+      // Merge everyone live (take the customer off hold after a warm briefing).
+      merge: publicProcedure
+        .input(z.object({ token: z.string() }))
+        .mutation(async ({ input }) => {
+          const room = getRoomByToken(input.token);
+          if (!room?.conferenceId) throw new Error("Conference not active");
+          const held = room.participants
+            .filter((p) => p.onHold && p.callControlId)
+            .map((p) => p.callControlId as string);
+          if (held.length) {
+            await unholdParticipants(room.conferenceId, held);
+            held.forEach((ccid) => setHold(ccid, false));
+          }
+          return roomSnapshot(input.token);
+        }),
+
+      // Toggle hold on a single participant (by role).
+      setHold: publicProcedure
+        .input(z.object({
+          token: z.string(),
+          role: z.enum(["customer", "target"]),
+          onHold: z.boolean(),
+        }))
+        .mutation(async ({ input }) => {
+          const room = getRoomByToken(input.token);
+          if (!room?.conferenceId) throw new Error("Conference not active");
+          const p = room.participants.find(
+            (x) => x.role === input.role && x.callControlId,
+          );
+          if (!p?.callControlId) throw new Error("Participant not connected");
+          if (input.onHold) await holdParticipants(room.conferenceId, [p.callControlId]);
+          else await unholdParticipants(room.conferenceId, [p.callControlId]);
+          setHold(p.callControlId, input.onHold);
+          return roomSnapshot(input.token);
+        }),
+
+      // Remove one participant (e.g. cancel a target) without ending the room.
+      removeParticipant: publicProcedure
+        .input(z.object({ token: z.string(), role: z.enum(["customer", "target"]) }))
+        .mutation(async ({ input }) => {
+          const room = getRoomByToken(input.token);
+          if (!room?.conferenceId) throw new Error("Conference not active");
+          const p = room.participants.find(
+            (x) => x.role === input.role && x.callControlId,
+          );
+          if (p?.callControlId) await hangupCall(p.callControlId);
+          return roomSnapshot(input.token);
+        }),
+
+      // Agent leaves but the customer + target stay connected. Hanging up the
+      // agent's WebRTC leg from the browser also triggers this server-side.
+      leave: publicProcedure
+        .input(z.object({ token: z.string() }))
+        .mutation(async ({ input }) => {
+          const room = getRoomByToken(input.token);
+          if (!room?.conferenceId) return { left: true };
+          const agent = room.participants.find(
+            (p) => p.role === "agent" && p.callControlId,
+          );
+          if (agent?.callControlId) {
+            await leaveConference(room.conferenceId, agent.callControlId);
+          }
+          return { left: true };
+        }),
+
+      // End the whole conference (hang up every leg).
+      end: publicProcedure
+        .input(z.object({ token: z.string() }))
+        .mutation(async ({ input }) => {
+          const room = getRoomByToken(input.token);
+          if (room) {
+            for (const p of room.participants) {
+              if (p.callControlId) await hangupCall(p.callControlId);
+            }
+            deleteRoom(input.token);
+          }
+          return { ended: true };
+        }),
+
+      // Poll the room state for the UI (participant list, hold status).
+      state: publicProcedure
+        .input(z.object({ token: z.string() }))
+        .query(({ input }) => roomSnapshot(input.token)),
+    }),
   }),
 
   // ─── Blooio (iMessage) ─────────────────────────────────────────────────────

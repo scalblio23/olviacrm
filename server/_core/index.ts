@@ -10,6 +10,19 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { sdk } from "./sdk";
 import { sendEmail, buildFollowUp1Html, buildReminderHtml } from "../mailgun";
+import {
+  answerCall,
+  createConference,
+  dialOut,
+  joinConference,
+  encodeClientState,
+  decodeClientState,
+} from "../telnyxVoice";
+import {
+  getRoomByToken,
+  bindCall,
+  removeCall,
+} from "../conferenceState";
 
 const TELNYX_API_KEY     = process.env.TELNYX_API_KEY ?? "";
 const TELNYX_FROM_NUMBER = process.env.TELNYX_FROM_NUMBER ?? "+61485825732";
@@ -32,6 +45,89 @@ async function telnyxSms(to: string, text: string) {
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(`Telnyx SMS failed: ${JSON.stringify(err)}`);
+  }
+}
+
+/**
+ * Handle a single Telnyx Call Control webhook event for the conference flow.
+ *
+ * Event sequence for a normal warm conference:
+ *   call.initiated (agent leg, has X-Conf-Token header) → answer it
+ *   call.answered  (agent leg)    → create conference, dial customer
+ *   call.answered  (customer leg) → join conference
+ *   call.answered  (target leg)   → join conference (held if warm transfer)
+ *   call.hangup    (any leg)      → drop from room state
+ */
+async function handleVoiceEvent(raw: Record<string, unknown>): Promise<void> {
+  const envelope  = (raw?.data ?? raw) as Record<string, unknown>;
+  const eventType = (envelope?.event_type ?? "unknown") as string;
+  const payload   = (envelope?.payload ?? {}) as Record<string, unknown>;
+  const callControlId = payload?.call_control_id as string | undefined;
+  console.log(`[Telnyx Voice] event_type=${eventType} ccid=${callControlId ?? "-"}`);
+  if (!callControlId) return;
+
+  const state = decodeClientState(payload?.client_state);
+
+  if (eventType === "call.initiated") {
+    // Only the agent's WebRTC leg carries our conference token (via custom SIP
+    // header or, after a dial-out, via client_state). Customer/target legs we
+    // initiate carry client_state and are handled on call.answered.
+    if (state?.role) return; // an outbound leg we created — wait for answered
+
+    const headers = (payload?.custom_headers ?? []) as Array<{ name?: string; value?: string }>;
+    const tokenHeader = headers.find((h) => (h?.name ?? "").toLowerCase() === "x-conf-token");
+    const token = tokenHeader?.value;
+    if (!token) {
+      console.warn("[Telnyx Voice] call.initiated without X-Conf-Token — ignoring");
+      return;
+    }
+    const room = getRoomByToken(token);
+    if (!room) {
+      console.warn(`[Telnyx Voice] no room for token ${token} — ignoring`);
+      return;
+    }
+    bindCall(token, "agent", callControlId);
+    await answerCall(callControlId, encodeClientState({ token, role: "agent" }));
+    return;
+  }
+
+  if (eventType === "call.answered") {
+    const token = state?.token as string | undefined;
+    const role  = state?.role as string | undefined;
+    if (!token || !role) return;
+    const room = getRoomByToken(token);
+    if (!room) return;
+
+    if (role === "agent") {
+      // Seed the conference from the agent leg, then dial the customer.
+      const conferenceId = await createConference(`conf-${token}`, callControlId);
+      room.conferenceId = conferenceId;
+      const customerCcid = await dialOut(
+        room.customerNumber,
+        encodeClientState({ token, role: "customer" }),
+      );
+      bindCall(token, "customer", customerCcid, room.customerNumber);
+    } else if (role === "customer") {
+      if (room.conferenceId) {
+        bindCall(token, "customer", callControlId, room.customerNumber);
+        await joinConference(room.conferenceId, callControlId);
+      }
+    } else if (role === "target") {
+      const number = (state?.number as string | undefined) ?? "";
+      if (room.conferenceId) {
+        bindCall(token, "target", callControlId, number);
+        // The target always joins live. For a warm transfer the *customer* was
+        // placed on hold by the trpc addTarget call, so the agent and target can
+        // talk privately until the agent merges everyone.
+        await joinConference(room.conferenceId, callControlId, { hold: false });
+      }
+    }
+    return;
+  }
+
+  if (eventType === "call.hangup") {
+    removeCall(callControlId);
+    return;
   }
 }
 
@@ -92,6 +188,16 @@ async function startServer() {
         console.warn("[Telnyx Webhook] message.received but missing from/text — payload:", JSON.stringify(payload).slice(0, 400));
       }
     }
+  });
+
+  // ─── Telnyx Voice Webhook (Call Control — conference orchestration) ───────
+  // Drives the browser-only 3-way conference. See server/conferenceState.ts for
+  // the full lifecycle. We ACK immediately (200) then process asynchronously.
+  app.post("/api/telnyx/voice", (req, res) => {
+    res.status(200).json({ received: true });
+    void handleVoiceEvent(req.body as Record<string, unknown>).catch((err) => {
+      console.error("[Telnyx Voice] handler error:", err);
+    });
   });
 
   // ─── Blooio Webhook (inbound iMessages) ──────────────────────────────────

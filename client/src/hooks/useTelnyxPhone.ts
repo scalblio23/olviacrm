@@ -13,6 +13,13 @@ export type PhoneState =
   | "ended"        // call just ended (brief flash)
   | "error";
 
+export interface ConferenceParticipant {
+  role: "agent" | "customer" | "target";
+  number: string;
+  onHold: boolean;
+  connected: boolean;
+}
+
 export interface UseTelnyxPhoneReturn {
   phoneState: PhoneState;
   isMuted: boolean;
@@ -22,6 +29,16 @@ export interface UseTelnyxPhoneReturn {
   hangup: () => void;
   toggleMute: () => void;
   initialize: () => void;
+  // ─── Conference (browser-only 3-way) ───
+  conferenceToken: string | null;
+  conferenceParticipants: ConferenceParticipant[];
+  startConference: (customerNumber: string) => Promise<void>;
+  addTarget: (targetNumber: string, warm?: boolean) => Promise<void>;
+  mergeConference: () => Promise<void>;
+  setParticipantHold: (role: "customer" | "target", onHold: boolean) => Promise<void>;
+  removeParticipant: (role: "customer" | "target") => Promise<void>;
+  leaveConference: () => Promise<void>;
+  endConference: () => Promise<void>;
 }
 
 export function useTelnyxPhone(): UseTelnyxPhoneReturn {
@@ -29,6 +46,9 @@ export function useTelnyxPhone(): UseTelnyxPhoneReturn {
   const [isMuted, setIsMuted]       = useState(false);
   const [error, setError]           = useState<string | null>(null);
   const [callCause, setCallCause]   = useState<string | null>(null);
+  const [conferenceToken, setConferenceToken] = useState<string | null>(null);
+  const [conferenceParticipants, setConferenceParticipants] =
+    useState<ConferenceParticipant[]>([]);
 
   const clientRef      = useRef<TelnyxRTC | null>(null);
   const activeCallRef  = useRef<ReturnType<TelnyxRTC["newCall"]> | null>(null);
@@ -77,6 +97,31 @@ export function useTelnyxPhone(): UseTelnyxPhoneReturn {
   }, []);
 
   const getTokenMutation = trpc.telnyx.getWebRTCToken.useMutation();
+
+  // ─── Conference mutations + state polling ──────────────────────────────────
+  const utils                = trpc.useUtils();
+  const confStartMutation    = trpc.telnyx.conference.start.useMutation();
+  const confAddMutation      = trpc.telnyx.conference.addTarget.useMutation();
+  const confMergeMutation    = trpc.telnyx.conference.merge.useMutation();
+  const confHoldMutation     = trpc.telnyx.conference.setHold.useMutation();
+  const confRemoveMutation   = trpc.telnyx.conference.removeParticipant.useMutation();
+  const confLeaveMutation    = trpc.telnyx.conference.leave.useMutation();
+  const confEndMutation      = trpc.telnyx.conference.end.useMutation();
+
+  // Poll room state while a conference is live so the participant list stays fresh.
+  useEffect(() => {
+    if (!conferenceToken) return;
+    let active = true;
+    const poll = async () => {
+      try {
+        const snap = await utils.telnyx.conference.state.fetch({ token: conferenceToken });
+        if (active && snap) setConferenceParticipants(snap.participants as ConferenceParticipant[]);
+      } catch { /* transient — keep polling */ }
+    };
+    void poll();
+    const id = setInterval(() => void poll(), 2500);
+    return () => { active = false; clearInterval(id); };
+  }, [conferenceToken, utils]);
 
   // Create a persistent hidden audio element on first use
   const getAudioEl = useCallback(() => {
@@ -194,6 +239,9 @@ export function useTelnyxPhone(): UseTelnyxPhoneReturn {
             setPhoneState("ended");
             setIsMuted(false);
             activeCallRef.current = null;
+            // If the agent's leg was part of a conference, it has now left it.
+            setConferenceToken(null);
+            setConferenceParticipants([]);
             // Return to ready after a brief "call ended" flash (1.5s)
             setTimeout(() => {
               setPhoneState("ready");
@@ -282,6 +330,87 @@ export function useTelnyxPhone(): UseTelnyxPhoneReturn {
     setIsMuted(false);
   }, []);
 
+  // ─── Conference controls ───────────────────────────────────────────────────
+
+  /** Start a 3-way: place the agent's WebRTC leg into a server conference room,
+   *  then the server dials the customer into the same room. */
+  const startConference = useCallback(async (customerNumber: string) => {
+    if (!clientRef.current || phoneState !== "ready") {
+      throw new Error("Phone not ready — connect your microphone first");
+    }
+    const { token, conferenceDid } = await confStartMutation.mutateAsync({ customerNumber });
+    setConferenceToken(token);
+    setConferenceParticipants([]);
+    setCallCause(null);
+    // The agent dials the conference DID; the X-Conf-Token header lets the server
+    // match this WebRTC leg to the room it just registered.
+    const opts = {
+      destinationNumber: conferenceDid,
+      callerNumber: fromNumberRef.current || "+61485825732",
+      callerName: "Loop Dialer",
+      audio: true,
+      remoteElement: getAudioEl(),
+      customHeaders: [{ name: "X-Conf-Token", value: token }],
+    } as Parameters<TelnyxRTC["newCall"]>[0];
+    const call = clientRef.current.newCall(opts);
+    activeCallRef.current = call;
+    setPhoneState("connecting");
+  }, [phoneState, confStartMutation, getAudioEl]);
+
+  const addTarget = useCallback(async (targetNumber: string, warm = true) => {
+    if (!conferenceToken) throw new Error("No active conference");
+    const snap = await confAddMutation.mutateAsync({ token: conferenceToken, targetNumber, warm });
+    if (snap) setConferenceParticipants(snap.participants as ConferenceParticipant[]);
+  }, [conferenceToken, confAddMutation]);
+
+  const mergeConference = useCallback(async () => {
+    if (!conferenceToken) return;
+    const snap = await confMergeMutation.mutateAsync({ token: conferenceToken });
+    if (snap) setConferenceParticipants(snap.participants as ConferenceParticipant[]);
+  }, [conferenceToken, confMergeMutation]);
+
+  const setParticipantHold = useCallback(async (role: "customer" | "target", onHold: boolean) => {
+    if (!conferenceToken) return;
+    const snap = await confHoldMutation.mutateAsync({ token: conferenceToken, role, onHold });
+    if (snap) setConferenceParticipants(snap.participants as ConferenceParticipant[]);
+  }, [conferenceToken, confHoldMutation]);
+
+  const removeParticipant = useCallback(async (role: "customer" | "target") => {
+    if (!conferenceToken) return;
+    const snap = await confRemoveMutation.mutateAsync({ token: conferenceToken, role });
+    if (snap) setConferenceParticipants(snap.participants as ConferenceParticipant[]);
+  }, [conferenceToken, confRemoveMutation]);
+
+  /** Agent drops out — customer + target keep talking on Telnyx. */
+  const leaveConference = useCallback(async () => {
+    if (conferenceToken) {
+      try { await confLeaveMutation.mutateAsync({ token: conferenceToken }); } catch { /* ignore */ }
+    }
+    if (activeCallRef.current) {
+      try { activeCallRef.current.hangup(); } catch { /* ignore */ }
+      activeCallRef.current = null;
+    }
+    setConferenceToken(null);
+    setConferenceParticipants([]);
+    setIsMuted(false);
+    setPhoneState("ready");
+  }, [conferenceToken, confLeaveMutation]);
+
+  /** End the whole conference (everyone hangs up). */
+  const endConference = useCallback(async () => {
+    if (conferenceToken) {
+      try { await confEndMutation.mutateAsync({ token: conferenceToken }); } catch { /* ignore */ }
+    }
+    if (activeCallRef.current) {
+      try { activeCallRef.current.hangup(); } catch { /* ignore */ }
+      activeCallRef.current = null;
+    }
+    setConferenceToken(null);
+    setConferenceParticipants([]);
+    setIsMuted(false);
+    setPhoneState("ready");
+  }, [conferenceToken, confEndMutation]);
+
   const toggleMute = useCallback(() => {
     if (!activeCallRef.current) return;
     if (isMuted) {
@@ -304,5 +433,11 @@ export function useTelnyxPhone(): UseTelnyxPhoneReturn {
     };
   }, [cleanup]);
 
-  return { phoneState, isMuted, error, callCause, dial, hangup, toggleMute, initialize };
+  return {
+    phoneState, isMuted, error, callCause,
+    dial, hangup, toggleMute, initialize,
+    conferenceToken, conferenceParticipants,
+    startConference, addTarget, mergeConference,
+    setParticipantHold, removeParticipant, leaveConference, endConference,
+  };
 }
